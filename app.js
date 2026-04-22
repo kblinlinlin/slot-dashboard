@@ -88,6 +88,10 @@ function escapeHtml(value) {
 
 function toNumber(value) {
   if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string" && value.trim().endsWith("%")) {
+    const percent = Number(value.trim().replace("%", ""));
+    return Number.isFinite(percent) ? percent / 100 : null;
+  }
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -103,6 +107,15 @@ function formatNumber(value, type = "amount") {
 
 function normalizePeriod(value) {
   return String(value ?? "").replace(/\s+/g, "");
+}
+
+function isWeekPeriod(value) {
+  return /^\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}$/.test(normalizePeriod(value));
+}
+
+function periodFromFilename(fileName) {
+  const match = String(fileName ?? "").match(/(\d{4}-\d{2}-\d{2})\s*_\s*(\d{4}-\d{2}-\d{2})/);
+  return match ? `${match[1]}_${match[2]}` : "";
 }
 
 function gameKey(value) {
@@ -905,7 +918,7 @@ async function handleFileUpload(event) {
   }
   try {
     const parsed = file.name.toLowerCase().endsWith(".csv")
-      ? parseCsvFile(await file.text(), file.name)
+      ? parseCsvFile(await file.arrayBuffer(), file.name)
       : parseWorkbook(XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: false }), file.name);
     if (parsed.kind === "full") {
       state.data = parsed.data;
@@ -946,13 +959,13 @@ function rowsToWeek(rawRows, sheetName, sourceFile, mapping = state.data?.mappin
     item.游戏Key = gameKey(english);
     item.显示名称 = normalizeMapping(mapping)[item.游戏Key] || english;
     item.产商 = vendorFromGameId(item.游戏ID);
-    item.日期 = normalizePeriod(item.日期 || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
+    item.日期 = normalizePeriod(item.日期 || periodFromFilename(sourceFile) || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
     item.排名 = item.下注金额排名变化;
     return item;
   }).filter((row) => !isExcludedGame(row));
 
   if (!rows.length) return null;
-  const period = normalizePeriod(rows[0]?.日期 || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
+  const period = normalizePeriod(rows[0]?.日期 || periodFromFilename(sourceFile) || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
   const [start = period, end = period] = period.split("_");
   return {
     sheetName,
@@ -963,7 +976,26 @@ function rowsToWeek(rawRows, sheetName, sourceFile, mapping = state.data?.mappin
   };
 }
 
-function parseCsvFile(text, sourceFile) {
+function decodeCsvBuffer(buffer) {
+  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  if (utf8.includes("日期") && utf8.includes("游戏名称")) return utf8;
+  try {
+    const gb = new TextDecoder("gb18030").decode(buffer);
+    if (gb.includes("日期") && gb.includes("游戏名称")) return gb;
+  } catch {
+    // Some browsers may not expose gb18030. Fall back to UTF-8 below.
+  }
+  try {
+    const gbk = new TextDecoder("gbk").decode(buffer);
+    if (gbk.includes("日期") && gbk.includes("游戏名称")) return gbk;
+  } catch {
+    // Keep UTF-8 fallback.
+  }
+  return utf8;
+}
+
+function parseCsvFile(buffer, sourceFile) {
+  const text = decodeCsvBuffer(buffer);
   const workbook = XLSX.read(text, { type: "string", raw: true });
   const sheetName = workbook.SheetNames[0];
   const week = rowsToWeek(sheetRows(workbook, sheetName), sheetName, sourceFile);
@@ -1024,7 +1056,7 @@ function parseWorkbook(workbook, sourceFile) {
 
 function normalizeWorkbookData(data) {
   const weeks = [...(data.weeks ?? [])]
-    .filter((week) => week.period && week.rows?.length)
+    .filter((week) => week.period && isWeekPeriod(week.period) && week.rows?.length)
     .map((week) => ({ ...week, rows: normalizeRows(week.rows, data.mapping ?? {}) }))
     .sort((a, b) => b.period.localeCompare(a.period));
   const currentWeek = data.currentWeek?.rows?.length
