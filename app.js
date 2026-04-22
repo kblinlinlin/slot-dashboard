@@ -1,5 +1,6 @@
 const INITIAL_DATA = window.INITIAL_WORKBOOK_DATA;
 const STORAGE_KEY = "slot-dashboard-workbook-data-v1";
+const EXCLUDED_GAME_KEYS = new Set(["game lobby", "none", "secretary"]);
 
 const VENDORS = ["AA", "IGC", "KK"];
 const TOP_OPTIONS = [
@@ -106,6 +107,10 @@ function normalizePeriod(value) {
 
 function gameKey(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function isExcludedGame(row) {
+  return EXCLUDED_GAME_KEYS.has(row?.游戏Key ?? gameKey(row?.英文名称 ?? row?.游戏名称));
 }
 
 function periodLabel(period) {
@@ -952,7 +957,7 @@ function parseWorkbook(workbook, sourceFile) {
       item.日期 = normalizePeriod(item.日期 || sheetName);
       item.排名 = item.下注金额排名变化;
       return item;
-    });
+    }).filter((row) => !isExcludedGame(row));
   };
 
   const weekNames = workbook.SheetNames.filter((name) => /^\d{4}-\d{2}-\d{2}\s*_\s*\d{4}-\d{2}-\d{2}$/.test(name.trim()));
@@ -1021,16 +1026,18 @@ function normalizeMapping(mapping) {
 
 function normalizeRows(rows, mapping = {}) {
   const normalizedMapping = normalizeMapping(mapping);
-  return rows.map((row) => {
-    const english = String(row.英文名称 ?? row.游戏名称 ?? "").trim();
-    const key = row.游戏Key ?? gameKey(english);
-    return {
-      ...row,
-      英文名称: english,
-      游戏Key: key,
-      显示名称: normalizedMapping[key] || row.显示名称 || english,
-    };
-  });
+  return rows
+    .map((row) => {
+      const english = String(row.英文名称 ?? row.游戏名称 ?? "").trim();
+      const key = row.游戏Key ?? gameKey(english);
+      return {
+        ...row,
+        英文名称: english,
+        游戏Key: key,
+        显示名称: normalizedMapping[key] || row.显示名称 || english,
+      };
+    })
+    .filter((row) => !isExcludedGame(row));
 }
 
 function appendSingleWeek(data, week, sourceFile) {
