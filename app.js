@@ -49,6 +49,7 @@ let state = {
   vendorTopN: "50",
   gameSearch: "",
   trendGames: [],
+  trendGameSearch: "",
   trendGamePeriod: "12",
   trendGameStart: "",
   trendGameEnd: "",
@@ -216,7 +217,13 @@ function getAllGames() {
   for (const row of currentRows()) {
     if (!map.has(row.英文名称)) map.set(row.英文名称, row);
   }
-  return [...map.values()].sort((a, b) => a.显示名称.localeCompare(b.显示名称, "zh-CN"));
+  const currentIndex = indexByEnglish(currentRows());
+  return [...map.values()].sort((a, b) => {
+    const rankA = rankOf(currentIndex.get(a.英文名称)) ?? 999999;
+    const rankB = rankOf(currentIndex.get(b.英文名称)) ?? 999999;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.显示名称.localeCompare(b.显示名称, "zh-CN");
+  });
 }
 
 function vendorTotals(rows) {
@@ -805,12 +812,25 @@ function populateControls() {
   populateSelect("#trendVendor", VENDORS.map((vendor) => ({ label: vendor, value: vendor })), state.trendVendors);
   populateSelect("#trendVendorMetric", VENDOR_METRICS.map((metric) => ({ label: metric.label, value: metric.key })), state.trendVendorMetric);
 
-  const games = getAllGames();
-  state.trendGames = state.trendGames.filter((name) => games.some((game) => game.英文名称 === name));
+  const allGames = getAllGames();
+  state.trendGames = state.trendGames.filter((name) => allGames.some((game) => game.英文名称 === name));
   if (!state.trendGames.length) {
-    state.trendGames = games.slice(0, 2).map((game) => game.英文名称);
+    state.trendGames = allGames.slice(0, 2).map((game) => game.英文名称);
   }
-  populateSelect("#trendGame", games.map((game) => ({ label: `${game.显示名称} (${game.英文名称})`, value: game.英文名称 })), state.trendGames);
+  const query = state.trendGameSearch.trim().toLowerCase();
+  const selectedSet = new Set(state.trendGames);
+  const currentIndex = indexByEnglish(currentRows());
+  const games = allGames.filter((game) => {
+    if (selectedSet.has(game.英文名称)) return true;
+    if (!query) return true;
+    return `${game.显示名称} ${game.英文名称}`.toLowerCase().includes(query);
+  });
+  populateSelect("#trendGame", games.map((game) => {
+    const rank = rankOf(currentIndex.get(game.英文名称));
+    const rankLabel = rank ? `#${formatNumber(rank, "people")} ` : "";
+    return { label: `${rankLabel}${game.显示名称} (${game.英文名称})`, value: game.英文名称 };
+  }), state.trendGames);
+  $("#trendGameSearch").value = state.trendGameSearch;
   $("#gameSearch").value = state.gameSearch;
 }
 
@@ -850,6 +870,10 @@ function wireEvents() {
   $("#gameSearch").addEventListener("input", (event) => {
     state.gameSearch = event.target.value;
     renderGameOverview();
+  });
+  $("#trendGameSearch").addEventListener("input", (event) => {
+    state.trendGameSearch = event.target.value;
+    populateControls();
   });
   $("#copySummaryButton").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("#weeklySummary").textContent);
