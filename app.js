@@ -104,6 +104,10 @@ function normalizePeriod(value) {
   return String(value ?? "").replace(/\s+/g, "");
 }
 
+function gameKey(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function periodLabel(period) {
   return normalizePeriod(period).replace("_", " 至 ");
 }
@@ -139,7 +143,7 @@ function sortedByRank(rows) {
 }
 
 function indexByEnglish(rows) {
-  return new Map(rows.map((row) => [row.英文名称, row]));
+  return new Map(rows.map((row) => [row.游戏Key ?? gameKey(row.英文名称), row]));
 }
 
 function currentRows() {
@@ -211,16 +215,18 @@ function getAllGames() {
   const map = new Map();
   for (const week of state.data.weeks) {
     for (const row of week.rows) {
-      if (!map.has(row.英文名称)) map.set(row.英文名称, row);
+      const key = row.游戏Key ?? gameKey(row.英文名称);
+      if (!map.has(key)) map.set(key, row);
     }
   }
   for (const row of currentRows()) {
-    if (!map.has(row.英文名称)) map.set(row.英文名称, row);
+    const key = row.游戏Key ?? gameKey(row.英文名称);
+    if (!map.has(key)) map.set(key, row);
   }
   const currentIndex = indexByEnglish(currentRows());
   return [...map.values()].sort((a, b) => {
-    const rankA = rankOf(currentIndex.get(a.英文名称)) ?? 999999;
-    const rankB = rankOf(currentIndex.get(b.英文名称)) ?? 999999;
+    const rankA = rankOf(currentIndex.get(a.游戏Key ?? gameKey(a.英文名称))) ?? 999999;
+    const rankB = rankOf(currentIndex.get(b.游戏Key ?? gameKey(b.英文名称))) ?? 999999;
     if (rankA !== rankB) return rankA - rankB;
     return a.显示名称.localeCompare(b.显示名称, "zh-CN");
   });
@@ -259,7 +265,7 @@ function formatReportDelta(value, type = "amount") {
 }
 
 function rankDelta(row, previousIndex) {
-  const previous = previousIndex.get(row.英文名称);
+  const previous = previousIndex.get(row.游戏Key ?? gameKey(row.英文名称));
   const currentRank = rankOf(row);
   const previousRank = rankOf(previous);
   if (currentRank === null || previousRank === null) return null;
@@ -280,7 +286,7 @@ function generateWeeklySummary() {
     "【新游上线监测】",
   ];
 
-  const newGames = sortedByRank(current.filter((row) => !previousIndex.has(row.英文名称)));
+  const newGames = sortedByRank(current.filter((row) => !previousIndex.has(row.游戏Key ?? gameKey(row.英文名称))));
   if (newGames.length) {
     lines.push(`本周全量榜单共发现 ${newGames.length} 款首次出现的新游戏：`);
     for (const row of newGames) {
@@ -302,10 +308,10 @@ function generateWeeklySummary() {
   lines.push("", "【头部游戏与 Top 10 厮杀】");
   const currentTop4 = sortedByRank(topRows(current, "10")).slice(0, 4);
   const previousTop4 = sortedByRank(topRows(previous, "10")).slice(0, 4);
-  const currentTop4Names = new Set(currentTop4.map((row) => row.英文名称));
-  const previousTop4Names = new Set(previousTop4.map((row) => row.英文名称));
-  const enteredTop4 = currentTop4.filter((row) => !previousTop4Names.has(row.英文名称));
-  const exitedTop4 = previousTop4.filter((row) => !currentTop4Names.has(row.英文名称));
+  const currentTop4Names = new Set(currentTop4.map((row) => row.游戏Key ?? gameKey(row.英文名称)));
+  const previousTop4Names = new Set(previousTop4.map((row) => row.游戏Key ?? gameKey(row.英文名称)));
+  const enteredTop4 = currentTop4.filter((row) => !previousTop4Names.has(row.游戏Key ?? gameKey(row.英文名称)));
+  const exitedTop4 = previousTop4.filter((row) => !currentTop4Names.has(row.游戏Key ?? gameKey(row.英文名称)));
   if (!enteredTop4.length && !exitedTop4.length) {
     lines.push(`本周 Top 4 与上周保持一致，头部格局相对固化，依次为：${currentTop4.map((row) => row.显示名称).join("、")}。`);
   } else {
@@ -315,10 +321,10 @@ function generateWeeklySummary() {
 
   const currentTop10 = sortedByRank(topRows(current, "10"));
   const previousTop10 = sortedByRank(topRows(previous, "10"));
-  const currentTop10Names = new Set(currentTop10.map((row) => row.英文名称));
-  const previousTop10Names = new Set(previousTop10.map((row) => row.英文名称));
-  const enteredTop10 = currentTop10.filter((row) => !previousTop10Names.has(row.英文名称));
-  const exitedTop10 = previousTop10.filter((row) => !currentTop10Names.has(row.英文名称));
+  const currentTop10Names = new Set(currentTop10.map((row) => row.游戏Key ?? gameKey(row.英文名称)));
+  const previousTop10Names = new Set(previousTop10.map((row) => row.游戏Key ?? gameKey(row.英文名称)));
+  const enteredTop10 = currentTop10.filter((row) => !previousTop10Names.has(row.游戏Key ?? gameKey(row.英文名称)));
+  const exitedTop10 = previousTop10.filter((row) => !currentTop10Names.has(row.游戏Key ?? gameKey(row.英文名称)));
   const swaps = currentTop10
     .map((row) => [row, rankDelta(row, previousIndex)])
     .filter(([, delta]) => delta && Math.abs(delta) > 0)
@@ -398,7 +404,7 @@ function renderGameOverview() {
     </thead>
     <tbody>
       ${rows.map((row) => {
-        const previous = previousIndex.get(row.英文名称);
+        const previous = previousIndex.get(row.游戏Key ?? gameKey(row.英文名称));
         const cells = ["下注金额", "游戏输赢", "投注次数", "新增玩家", "活跃玩家"].map((field) => {
           const type = field.includes("玩家") ? "people" : "amount";
           return `
@@ -487,7 +493,7 @@ function renderVendorOverview() {
         <h3>${vendor} 上榜游戏</h3>
         <ol>
           ${vendorRows.map((row) => {
-            const previous = previousIndex.get(row.英文名称);
+            const previous = previousIndex.get(row.游戏Key ?? gameKey(row.英文名称));
             return `<li><span>${escapeHtml(row.显示名称)}</span><strong class="${changeClass(rankOf(row), rankOf(previous), true)}">#${formatNumber(rankOf(row), "people")} / 上周 #${formatNumber(rankOf(previous), "people")}</strong></li>`;
           }).join("") || `<li><span>暂无数据</span><strong>-</strong></li>`}
         </ol>
@@ -587,17 +593,17 @@ function renderGameTrend() {
   const metric = getMetric(state.trendGameMetric);
   const weeks = selectedWeeks(state.trendGamePeriod, state.trendGameStart, state.trendGameEnd);
   const games = getAllGames();
-  const selectedGames = state.trendGames.length ? state.trendGames : games.slice(0, 2).map((game) => game.英文名称);
-  const seriesList = selectedGames.map((gameName) => {
-    const game = games.find((row) => row.英文名称 === gameName);
+  const selectedGames = state.trendGames.length ? state.trendGames : games.slice(0, 2).map((game) => game.游戏Key ?? gameKey(game.英文名称));
+  const seriesList = selectedGames.map((selectedKey) => {
+    const game = games.find((row) => (row.游戏Key ?? gameKey(row.英文名称)) === selectedKey);
     const points = weeks.map((week) => {
-      const row = week.rows.find((item) => item.英文名称 === gameName);
+      const row = week.rows.find((item) => (item.游戏Key ?? gameKey(item.英文名称)) === selectedKey);
       const value = toNumber(row?.[metric.key]);
       return row && value !== null
-        ? { label: week.start.slice(5), period: week.period, value, row, seriesName: game?.显示名称 ?? gameName }
+        ? { label: week.start.slice(5), period: week.period, value, row, seriesName: game?.显示名称 ?? selectedKey }
         : null;
     }).filter(Boolean);
-    return { name: game?.显示名称 ?? gameName, points };
+    return { name: game?.显示名称 ?? selectedKey, points };
   });
 
   renderMultiLineChart("#gameTrendChart", seriesList, metric, `${metric.label} - 多游戏对比`);
@@ -813,22 +819,24 @@ function populateControls() {
   populateSelect("#trendVendorMetric", VENDOR_METRICS.map((metric) => ({ label: metric.label, value: metric.key })), state.trendVendorMetric);
 
   const allGames = getAllGames();
-  state.trendGames = state.trendGames.filter((name) => allGames.some((game) => game.英文名称 === name));
+  state.trendGames = state.trendGames.map(gameKey).filter((name) => allGames.some((game) => (game.游戏Key ?? gameKey(game.英文名称)) === name));
   if (!state.trendGames.length) {
-    state.trendGames = allGames.slice(0, 2).map((game) => game.英文名称);
+    state.trendGames = allGames.slice(0, 2).map((game) => game.游戏Key ?? gameKey(game.英文名称));
   }
   const query = state.trendGameSearch.trim().toLowerCase();
   const selectedSet = new Set(state.trendGames);
   const currentIndex = indexByEnglish(currentRows());
   const games = allGames.filter((game) => {
-    if (selectedSet.has(game.英文名称)) return true;
+    const key = game.游戏Key ?? gameKey(game.英文名称);
+    if (selectedSet.has(key)) return true;
     if (!query) return true;
     return `${game.显示名称} ${game.英文名称}`.toLowerCase().includes(query);
   });
   populateSelect("#trendGame", games.map((game) => {
-    const rank = rankOf(currentIndex.get(game.英文名称));
+    const key = game.游戏Key ?? gameKey(game.英文名称);
+    const rank = rankOf(currentIndex.get(key));
     const rankLabel = rank ? `#${formatNumber(rank, "people")} ` : "";
-    return { label: `${rankLabel}${game.显示名称} (${game.英文名称})`, value: game.英文名称 };
+    return { label: `${rankLabel}${game.显示名称} (${game.英文名称})`, value: key };
   }), state.trendGames);
   $("#trendGameSearch").value = state.trendGameSearch;
   $("#gameSearch").value = state.gameSearch;
@@ -924,7 +932,7 @@ function parseWorkbook(workbook, sourceFile) {
   const mappingRows = sheetRows(workbook, "游戏名称映射");
   const mapping = {};
   for (const row of mappingRows.slice(1)) {
-    if (row[0] && row[1]) mapping[String(row[0]).trim()] = String(row[1]).trim();
+    if (row[0] && row[1]) mapping[gameKey(row[0])] = String(row[1]).trim();
   }
   const displayMapping = { ...(state.data?.mapping ?? {}), ...mapping };
   const loadRows = (sheetName) => {
@@ -938,7 +946,8 @@ function parseWorkbook(workbook, sourceFile) {
       });
       const english = String(item.游戏名称 ?? "").trim();
       item.英文名称 = english;
-      item.显示名称 = displayMapping[english] || english;
+      item.游戏Key = gameKey(english);
+      item.显示名称 = displayMapping[item.游戏Key] || english;
       item.产商 = vendorFromGameId(item.游戏ID);
       item.日期 = normalizePeriod(item.日期 || sheetName);
       item.排名 = item.下注金额排名变化;
@@ -995,14 +1004,33 @@ function parseWorkbook(workbook, sourceFile) {
 function normalizeWorkbookData(data) {
   const weeks = [...(data.weeks ?? [])]
     .filter((week) => week.period && week.rows?.length)
+    .map((week) => ({ ...week, rows: normalizeRows(week.rows, data.mapping ?? {}) }))
     .sort((a, b) => b.period.localeCompare(a.period));
   const currentWeek = data.currentWeek?.rows?.length
-    ? data.currentWeek
+    ? { ...data.currentWeek, rows: normalizeRows(data.currentWeek.rows, data.mapping ?? {}) }
     : { period: weeks[0]?.period ?? "", rows: weeks[0]?.rows ?? [] };
   const previousWeek = data.previousWeek?.rows?.length
-    ? data.previousWeek
+    ? { ...data.previousWeek, rows: normalizeRows(data.previousWeek.rows, data.mapping ?? {}) }
     : { period: weeks[1]?.period ?? "", rows: weeks[1]?.rows ?? [] };
-  return { ...data, weeks, currentWeek, previousWeek };
+  return { ...data, mapping: normalizeMapping(data.mapping ?? {}), weeks, currentWeek, previousWeek };
+}
+
+function normalizeMapping(mapping) {
+  return Object.fromEntries(Object.entries(mapping).map(([key, value]) => [gameKey(key), value]));
+}
+
+function normalizeRows(rows, mapping = {}) {
+  const normalizedMapping = normalizeMapping(mapping);
+  return rows.map((row) => {
+    const english = String(row.英文名称 ?? row.游戏名称 ?? "").trim();
+    const key = row.游戏Key ?? gameKey(english);
+    return {
+      ...row,
+      英文名称: english,
+      游戏Key: key,
+      显示名称: normalizedMapping[key] || row.显示名称 || english,
+    };
+  });
 }
 
 function appendSingleWeek(data, week, sourceFile) {
