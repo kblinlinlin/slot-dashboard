@@ -1,0 +1,8 @@
+docs/
+tools/
+*.xlsx
+*.xls
+start-dashboard.ps1
+node_modules/
+.DS_Store
+Thumbs.db

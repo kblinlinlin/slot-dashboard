@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>平台 Slot 游戏数据看板</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Internal Slot Dashboard</p>
+          <h1>平台 Slot 游戏数据看板</h1>
+          <p class="subtitle">基于平台提供的脱敏 Excel 数据，按周查看游戏、产商与趋势变化。支持上传完整看板或每周新增单周数据。</p>
+        </div>
+        <label class="upload-card">
+          <span>上传完整看板 / 单周数据</span>
+          <strong id="sourceLabel">当前加载：平台游戏数据看板.xlsx</strong>
+          <input id="fileInput" type="file" accept=".xlsx,.xls" />
+        </label>
+      </header>
+
+      <section class="summary-panel" aria-label="自动总结">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Auto Report</p>
+            <h2>本周自动总结</h2>
+          </div>
+          <button class="ghost-button" id="copySummaryButton" type="button">复制总结</button>
+        </div>
+        <div class="report-box" id="weeklySummary"></div>
+      </section>
+
+      <nav class="tabs" aria-label="看板标签页">
+        <button type="button" class="tab is-active" data-tab="gameOverview">游戏总览数据</button>
+        <button type="button" class="tab" data-tab="vendorOverview">产商总览数据</button>
+        <button type="button" class="tab" data-tab="gameTrend">游戏走势</button>
+        <button type="button" class="tab" data-tab="vendorTrend">产商走势分析</button>
+      </nav>
+
+      <section class="tab-panel is-active" id="gameOverview">
+        <div class="toolbar">
+          <label>产商<select id="overviewVendor"></select></label>
+          <label>范围<select id="overviewTopN"></select></label>
+          <label class="search-field">游戏搜索<input id="gameSearch" type="search" placeholder="输入中文或英文名" /></label>
+        </div>
+        <div class="table-shell">
+          <table class="data-table" id="gameOverviewTable"></table>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="vendorOverview">
+        <div class="toolbar">
+          <label>统计范围<select id="vendorTopN"></select></label>
+        </div>
+        <div class="metric-grid" id="vendorMetricGrid"></div>
+        <div class="table-shell">
+          <table class="data-table" id="vendorOverviewTable"></table>
+        </div>
+        <div class="vendor-lists" id="vendorRankLists"></div>
+      </section>
+
+      <section class="tab-panel" id="gameTrend">
+        <div class="toolbar">
+          <label class="search-field">游戏<select id="trendGame" multiple></select></label>
+          <label>时间周期<select id="trendGamePeriod"></select></label>
+          <label class="custom-period" id="gameStartWrap">开始周<select id="trendGameStart"></select></label>
+          <label class="custom-period" id="gameEndWrap">结束周<select id="trendGameEnd"></select></label>
+          <label>指标<select id="trendGameMetric"></select></label>
+        </div>
+        <div class="chart-layout">
+          <div class="chart-panel">
+            <svg id="gameTrendChart" role="img" aria-label="游戏走势折线图"></svg>
+          </div>
+          <div class="side-stats" id="gameTrendStats"></div>
+        </div>
+        <div class="table-shell">
+          <table class="data-table compact-table" id="gameTrendTable"></table>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="vendorTrend">
+        <div class="toolbar">
+          <label>产商<select id="trendVendor" multiple></select></label>
+          <label>时间周期<select id="trendVendorPeriod"></select></label>
+          <label class="custom-period" id="vendorStartWrap">开始周<select id="trendVendorStart"></select></label>
+          <label class="custom-period" id="vendorEndWrap">结束周<select id="trendVendorEnd"></select></label>
+          <label>统计范围<select id="trendVendorTopN"></select></label>
+          <label>指标<select id="trendVendorMetric"></select></label>
+        </div>
+        <div class="chart-layout">
+          <div class="chart-panel">
+            <svg id="vendorTrendChart" role="img" aria-label="产商走势折线图"></svg>
+          </div>
+          <div class="side-stats" id="vendorTrendStats"></div>
+        </div>
+        <div class="chart-layout pie-layout">
+          <div class="chart-panel">
+            <svg id="vendorBetPieChart" role="img" aria-label="产商总下注金额饼图"></svg>
+          </div>
+          <div class="side-stats" id="vendorBetPieStats"></div>
+        </div>
+        <div class="table-shell">
+          <table class="data-table compact-table" id="vendorTrendTable"></table>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="data/initial-data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
