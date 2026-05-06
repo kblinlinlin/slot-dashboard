@@ -116,6 +116,44 @@ function encodeBase64Utf8(text) {
   return btoa(unescape(encodeURIComponent(text)));
 }
 
+async function fetchGitHubContent(url, token) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    return { ok: false, status: response.status, text: await response.text() };
+  }
+  return { ok: true, json: await response.json() };
+}
+
+async function putGitHubContentWithRetry(url, token, buildPayload, maxAttempts = 2) {
+  let lastFailure = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const currentFile = await fetchGitHubContent(url, token);
+    if (!currentFile.ok) return currentFile;
+    const payload = buildPayload(currentFile.json.sha);
+    const updateResponse = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (updateResponse.ok) {
+      return { ok: true, json: await updateResponse.json() };
+    }
+    const detail = await updateResponse.text();
+    lastFailure = { ok: false, status: updateResponse.status, text: detail };
+    if (updateResponse.status !== 409) break;
+  }
+  return lastFailure ?? { ok: false, status: 500, text: "Unknown GitHub update failure" };
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -931,35 +969,14 @@ async function saveGlobalMappingEntry() {
   };
 
   const contentUrl = `https://api.github.com/repos/${GITHUB_SYNC.owner}/${GITHUB_SYNC.repo}/contents/${GITHUB_SYNC.path}`;
-  const currentResponse = await fetch(contentUrl, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!currentResponse.ok) {
-    alert(`读取 GitHub 映射文件失败：${currentResponse.status}`);
-    return;
-  }
-  const currentFile = await currentResponse.json();
-  const payload = {
+  const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha) => ({
     message: `Update shared mapping: ${english}`,
     content: encodeBase64Utf8(JSON.stringify(nextMapping, null, 2) + "\n"),
-    sha: currentFile.sha,
+    sha,
     branch: GITHUB_SYNC.branch,
-  };
-  const updateResponse = await fetch(contentUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!updateResponse.ok) {
-    const detail = await updateResponse.text();
-    alert(`保存到 GitHub 失败：${updateResponse.status}\n${detail}`);
+  }));
+  if (!updateResult.ok) {
+    alert(`保存到 GitHub 失败：${updateResult.status}\n${updateResult.text}`);
     return;
   }
 
@@ -975,44 +992,23 @@ async function saveGlobalMappingEntry() {
 async function publishSharedDashboard(customMessage = "") {
   const token = currentGithubToken();
   if (!token) {
-    alert("请先在映射页输入 GitHub Token，然后再发布共享数据。");
+    alert("请先在页面顶部输入 GitHub Token，然后再发布共享数据。");
     return;
   }
   saveSessionToken(token);
   const contentUrl = `https://api.github.com/repos/${GITHUB_DASHBOARD_SYNC.owner}/${GITHUB_DASHBOARD_SYNC.repo}/contents/${GITHUB_DASHBOARD_SYNC.path}`;
-  const currentResponse = await fetch(contentUrl, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!currentResponse.ok) {
-    alert(`读取共享看板文件失败：${currentResponse.status}`);
-    return;
-  }
-  const currentFile = await currentResponse.json();
   const dashboardData = normalizeWorkbookData({
     ...state.data,
     generatedAt: new Date().toISOString(),
   });
-  const payload = {
+  const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha) => ({
     message: customMessage || `Sync dashboard data ${dashboardData.currentWeek?.period || ""}`,
     content: encodeBase64Utf8(JSON.stringify(dashboardData, null, 2) + "\n"),
-    sha: currentFile.sha,
+    sha,
     branch: GITHUB_DASHBOARD_SYNC.branch,
-  };
-  const updateResponse = await fetch(contentUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!updateResponse.ok) {
-    const detail = await updateResponse.text();
-    alert(`发布共享数据失败：${updateResponse.status}\n${detail}`);
+  }));
+  if (!updateResult.ok) {
+    alert(`发布共享数据失败：${updateResult.status}\n${updateResult.text}`);
     return;
   }
   alert("已发布当前看板数据到 GitHub。等 GitHub Pages 更新后，其他访问者刷新页面即可看到最新数据。");
