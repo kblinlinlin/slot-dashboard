@@ -117,6 +117,24 @@ h3 {
   color: var(--muted);
 }
 
+.shared-status {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfb;
+  color: #31505f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .upload-card .ghost-button {
   justify-self: start;
 }
@@ -155,6 +173,11 @@ h3 {
 .ghost-button:hover {
   border-color: var(--teal);
   color: var(--teal);
+}
+
+.ghost-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 
 .report-box {

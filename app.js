@@ -256,6 +256,12 @@ function previousPeriod() {
   return state.data.previousWeek?.period || state.data.weeks[1]?.period || "";
 }
 
+function currentSourceLabel() {
+  const sourceFile = state.data.sourceFile || "平台游戏数据看板.xlsx";
+  const period = currentPeriod();
+  return period ? `当前加载：${sourceFile} | 本周 ${periodLabel(period)}` : `当前加载：${sourceFile}`;
+}
+
 function sum(rows, key) {
   return rows.reduce((total, row) => total + (toNumber(row[key]) ?? 0), 0);
 }
@@ -1046,10 +1052,39 @@ async function loadSharedDashboard() {
   }
 }
 
+function renderSharedStatus() {
+  const sourceLabel = $("#sourceLabel");
+  if (sourceLabel) sourceLabel.textContent = currentSourceLabel();
+  const currentWeek = currentPeriod() ? periodLabel(currentPeriod()) : "-";
+  const previousWeek = previousPeriod() ? periodLabel(previousPeriod()) : "-";
+  const currentTarget = $("#sharedCurrentWeek");
+  const previousTarget = $("#sharedPreviousWeek");
+  if (currentTarget) currentTarget.textContent = `当前共享本周：${currentWeek}`;
+  if (previousTarget) previousTarget.textContent = `当前共享上周：${previousWeek}`;
+}
+
+async function reloadSharedDataFromRemote() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+  state.data = normalizeWorkbookData(INITIAL_DATA);
+  state.trendGameStart = "";
+  state.trendGameEnd = "";
+  state.trendVendorStart = "";
+  state.trendVendorEnd = "";
+  renderAll();
+  await loadSharedDashboard();
+  await loadSharedMapping();
+  alert("已清除本地缓存，并重新加载 GitHub 上的共享数据。");
+}
+
 function renderAll() {
   populateControls();
   const tokenField = $("#globalGithubToken");
   if (tokenField) tokenField.value = loadSessionToken();
+  renderSharedStatus();
   renderSummary();
   renderGameOverview();
   renderVendorOverview();
@@ -1163,6 +1198,20 @@ function wireEvents() {
       alert(`发布共享数据失败：${error.message}`);
     });
   });
+  $("#reloadSharedButton").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = "正在重新加载...";
+    try {
+      await reloadSharedDataFromRemote();
+    } catch (error) {
+      alert(`重新加载共享数据失败：${error.message}`);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  });
   $("#globalGithubToken").addEventListener("input", (event) => {
     saveSessionToken(event.target.value);
   });
@@ -1193,10 +1242,9 @@ async function handleFileUpload(event) {
       : parseWorkbook(XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: false }), file.name);
     if (parsed.kind === "full") {
       state.data = parsed.data;
-      $("#sourceLabel").textContent = `当前加载：${file.name}（完整看板）`;
+      state.data.sourceFile = file.name;
     } else {
       state.data = appendSingleWeek(state.data, parsed.week, file.name);
-      $("#sourceLabel").textContent = `已追加/更新单周：${periodLabel(parsed.week.period)}`;
     }
     saveStoredData();
     state.trendGames = [];
@@ -1212,6 +1260,7 @@ async function handleFileUpload(event) {
         alert(`自动发布共享数据失败：${error.message}`);
       });
     } else {
+      renderSharedStatus();
       $("#sourceLabel").textContent += "（仅本地更新，未发布共享）";
     }
   } catch (error) {

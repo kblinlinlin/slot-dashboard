@@ -12,15 +12,27 @@
         <div>
           <p class="eyebrow">Internal Slot Dashboard</p>
           <h1>平台 Slot 游戏数据看板</h1>
-          <p class="subtitle">基于平台提供的脱敏 Excel 数据，按周查看游戏、产商与趋势变化。支持上传完整看板或每周新增单周数据。</p>
+          <p class="subtitle">
+            基于平台提供的脱敏 Excel 数据，按周查看游戏、产商与趋势变化。支持上传完整看板或每周新增单周数据。
+          </p>
         </div>
-        <label class="upload-card">
+        <section class="upload-card">
           <span>上传完整看板 / 单周数据</span>
           <strong id="sourceLabel">当前加载：平台游戏数据看板.xlsx</strong>
+          <div class="shared-status">
+            <p id="sharedCurrentWeek">当前共享本周：-</p>
+            <p id="sharedPreviousWeek">当前共享上周：-</p>
+          </div>
           <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
-          <label>GitHub Token<input id="globalGithubToken" type="password" placeholder="用于发布共享数据和共享映射" /></label>
-          <button class="ghost-button" id="publishDashboardButton" type="button">发布当前数据到 GitHub</button>
-        </label>
+          <label>
+            GitHub Token
+            <input id="globalGithubToken" type="password" placeholder="用于发布共享数据和共享映射" />
+          </label>
+          <div class="upload-actions">
+            <button class="ghost-button" id="publishDashboardButton" type="button">发布当前数据到 GitHub</button>
+            <button class="ghost-button" id="reloadSharedButton" type="button">清除本地缓存并重新加载共享数据</button>
+          </div>
+        </section>
       </header>
 
       <section class="summary-panel" aria-label="自动总结">
