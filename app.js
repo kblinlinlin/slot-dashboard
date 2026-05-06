@@ -1059,12 +1059,10 @@ function normalizeWorkbookData(data) {
     .filter((week) => week.period && isWeekPeriod(week.period) && week.rows?.length)
     .map((week) => ({ ...week, rows: normalizeRows(week.rows, data.mapping ?? {}) }))
     .sort((a, b) => b.period.localeCompare(a.period));
-  const currentWeek = data.currentWeek?.rows?.length
-    ? { ...data.currentWeek, rows: normalizeRows(data.currentWeek.rows, data.mapping ?? {}) }
-    : { period: weeks[0]?.period ?? "", rows: weeks[0]?.rows ?? [] };
-  const previousWeek = data.previousWeek?.rows?.length
-    ? { ...data.previousWeek, rows: normalizeRows(data.previousWeek.rows, data.mapping ?? {}) }
-    : { period: weeks[1]?.period ?? "", rows: weeks[1]?.rows ?? [] };
+  // Always compare against the latest two uploaded/available weeks in history.
+  // This avoids stale cached currentWeek/previousWeek values overriding fresher single-week uploads.
+  const currentWeek = { period: weeks[0]?.period ?? "", rows: weeks[0]?.rows ?? [] };
+  const previousWeek = { period: weeks[1]?.period ?? "", rows: weeks[1]?.rows ?? [] };
   return { ...data, mapping: normalizeMapping(data.mapping ?? {}), weeks, currentWeek, previousWeek };
 }
 
