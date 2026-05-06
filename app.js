@@ -1,6 +1,13 @@
 const INITIAL_DATA = window.INITIAL_WORKBOOK_DATA;
 const STORAGE_KEY = "slot-dashboard-workbook-data-v1";
+const TOKEN_STORAGE_KEY = "slot-dashboard-github-token-session";
 const EXCLUDED_GAME_KEYS = new Set(["game lobby", "none", "secretary"]);
+const GITHUB_SYNC = {
+  owner: "kblinlinlin",
+  repo: "slot-dashboard",
+  branch: "main",
+  path: "data/shared-mapping.json",
+};
 
 const VENDORS = ["AA", "IGC", "KK"];
 const TOP_OPTIONS = [
@@ -77,6 +84,22 @@ function loadStoredData() {
 
 function saveStoredData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+}
+
+function loadSessionToken() {
+  try {
+    return sessionStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveSessionToken(token) {
+  try {
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function escapeHtml(value) {
@@ -831,6 +854,7 @@ function renderMappingManager() {
   });
   $("#mappingCount").textContent = `共 ${entries.length} 条`;
   $("#mappingSearch").value = state.mappingSearch;
+  $("#githubToken").value = loadSessionToken();
   $("#mappingTable").innerHTML = `
     <thead>
       <tr>
@@ -872,6 +896,86 @@ function saveMappingEntry() {
   $("#mappingEnglish").value = english;
   $("#mappingChinese").value = chinese;
   renderAll();
+}
+
+async function saveGlobalMappingEntry() {
+  const english = $("#mappingEnglish").value.trim();
+  const chinese = $("#mappingChinese").value.trim();
+  const token = $("#githubToken").value.trim();
+  if (!english || !chinese) {
+    alert("请先填写英文游戏名和中文显示名。");
+    return;
+  }
+  if (!token) {
+    alert("请先输入 GitHub Token。");
+    return;
+  }
+
+  saveSessionToken(token);
+  const nextMapping = {
+    ...normalizeMapping(state.data.mapping ?? {}),
+    [gameKey(english)]: chinese,
+  };
+
+  const contentUrl = `https://api.github.com/repos/${GITHUB_SYNC.owner}/${GITHUB_SYNC.repo}/contents/${GITHUB_SYNC.path}`;
+  const currentResponse = await fetch(contentUrl, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!currentResponse.ok) {
+    alert(`读取 GitHub 映射文件失败：${currentResponse.status}`);
+    return;
+  }
+  const currentFile = await currentResponse.json();
+  const payload = {
+    message: `Update shared mapping: ${english}`,
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(nextMapping, null, 2) + "\n"))),
+    sha: currentFile.sha,
+    branch: GITHUB_SYNC.branch,
+  };
+  const updateResponse = await fetch(contentUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!updateResponse.ok) {
+    const detail = await updateResponse.text();
+    alert(`保存到 GitHub 失败：${updateResponse.status}\n${detail}`);
+    return;
+  }
+
+  state.data = normalizeWorkbookData({
+    ...state.data,
+    mapping: nextMapping,
+  });
+  saveStoredData();
+  renderAll();
+  alert("已保存到 GitHub。等 GitHub Pages 更新后，其他访问者刷新页面即可看到新映射。");
+}
+
+async function loadSharedMapping() {
+  try {
+    const response = await fetch(`data/shared-mapping.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return;
+    const sharedMapping = normalizeMapping(await response.json());
+    state.data = normalizeWorkbookData({
+      ...state.data,
+      mapping: {
+        ...normalizeMapping(state.data.mapping ?? {}),
+        ...sharedMapping,
+      },
+    });
+    saveStoredData();
+    renderAll();
+  } catch {
+    // Shared mapping load failure should not block the page.
+  }
 }
 
 function renderAll() {
@@ -979,6 +1083,14 @@ function wireEvents() {
     renderMappingManager();
   });
   $("#saveMappingButton").addEventListener("click", saveMappingEntry);
+  $("#saveGlobalMappingButton").addEventListener("click", () => {
+    saveGlobalMappingEntry().catch((error) => {
+      alert(`保存到 GitHub 失败：${error.message}`);
+    });
+  });
+  $("#githubToken").addEventListener("input", (event) => {
+    saveSessionToken(event.target.value);
+  });
   $("#mappingTable").addEventListener("click", (event) => {
     const button = event.target.closest(".mapping-edit-button");
     if (!button) return;
@@ -1185,3 +1297,4 @@ function appendSingleWeek(data, week, sourceFile) {
 
 wireEvents();
 renderAll();
+loadSharedMapping();

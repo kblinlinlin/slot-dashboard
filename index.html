@@ -124,7 +124,12 @@
             <div class="mapping-form">
               <label>英文游戏名<input id="mappingEnglish" type="text" placeholder="例如 Lucky Tycoon" /></label>
               <label>中文显示名<input id="mappingChinese" type="text" placeholder="例如 大富翁" /></label>
-              <button class="ghost-button" id="saveMappingButton" type="button">保存映射</button>
+              <label>GitHub Token<input id="githubToken" type="password" placeholder="仅你保存全局映射时使用" /></label>
+              <div class="mapping-actions">
+                <button class="ghost-button" id="saveMappingButton" type="button">仅本地保存</button>
+                <button class="ghost-button" id="saveGlobalMappingButton" type="button">保存到 GitHub</button>
+              </div>
+              <p class="mapping-note">保存到 GitHub 后，GitHub Pages 更新完成，其他访问者刷新页面即可看到新映射。</p>
             </div>
           </section>
           <section class="mapping-card">
