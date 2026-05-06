@@ -8,6 +8,12 @@ const GITHUB_SYNC = {
   branch: "main",
   path: "data/shared-mapping.json",
 };
+const GITHUB_DASHBOARD_SYNC = {
+  owner: "kblinlinlin",
+  repo: "slot-dashboard",
+  branch: "main",
+  path: "data/shared-dashboard.json",
+};
 
 const VENDORS = ["AA", "IGC", "KK"];
 const TOP_OPTIONS = [
@@ -100,6 +106,10 @@ function saveSessionToken(token) {
   } catch {
     // Ignore storage failures.
   }
+}
+
+function encodeBase64Utf8(text) {
+  return btoa(unescape(encodeURIComponent(text)));
 }
 
 function escapeHtml(value) {
@@ -931,7 +941,7 @@ async function saveGlobalMappingEntry() {
   const currentFile = await currentResponse.json();
   const payload = {
     message: `Update shared mapping: ${english}`,
-    content: btoa(unescape(encodeURIComponent(JSON.stringify(nextMapping, null, 2) + "\n"))),
+    content: encodeBase64Utf8(JSON.stringify(nextMapping, null, 2) + "\n"),
     sha: currentFile.sha,
     branch: GITHUB_SYNC.branch,
   };
@@ -959,6 +969,52 @@ async function saveGlobalMappingEntry() {
   alert("已保存到 GitHub。等 GitHub Pages 更新后，其他访问者刷新页面即可看到新映射。");
 }
 
+async function publishSharedDashboard(customMessage = "") {
+  const token = $("#githubToken")?.value.trim() || loadSessionToken();
+  if (!token) {
+    alert("请先在映射页输入 GitHub Token，然后再发布共享数据。");
+    return;
+  }
+  saveSessionToken(token);
+  const contentUrl = `https://api.github.com/repos/${GITHUB_DASHBOARD_SYNC.owner}/${GITHUB_DASHBOARD_SYNC.repo}/contents/${GITHUB_DASHBOARD_SYNC.path}`;
+  const currentResponse = await fetch(contentUrl, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!currentResponse.ok) {
+    alert(`读取共享看板文件失败：${currentResponse.status}`);
+    return;
+  }
+  const currentFile = await currentResponse.json();
+  const dashboardData = normalizeWorkbookData({
+    ...state.data,
+    generatedAt: new Date().toISOString(),
+  });
+  const payload = {
+    message: customMessage || `Sync dashboard data ${dashboardData.currentWeek?.period || ""}`,
+    content: encodeBase64Utf8(JSON.stringify(dashboardData, null, 2) + "\n"),
+    sha: currentFile.sha,
+    branch: GITHUB_DASHBOARD_SYNC.branch,
+  };
+  const updateResponse = await fetch(contentUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!updateResponse.ok) {
+    const detail = await updateResponse.text();
+    alert(`发布共享数据失败：${updateResponse.status}\n${detail}`);
+    return;
+  }
+  alert("已发布当前看板数据到 GitHub。等 GitHub Pages 更新后，其他访问者刷新页面即可看到最新数据。");
+}
+
 async function loadSharedMapping() {
   try {
     const response = await fetch(`data/shared-mapping.json?ts=${Date.now()}`, { cache: "no-store" });
@@ -975,6 +1031,19 @@ async function loadSharedMapping() {
     renderAll();
   } catch {
     // Shared mapping load failure should not block the page.
+  }
+}
+
+async function loadSharedDashboard() {
+  try {
+    const response = await fetch(`data/shared-dashboard.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return;
+    const sharedDashboard = normalizeWorkbookData(await response.json());
+    state.data = sharedDashboard;
+    saveStoredData();
+    renderAll();
+  } catch {
+    // Shared dashboard load failure should not block the page.
   }
 }
 
@@ -1088,6 +1157,11 @@ function wireEvents() {
       alert(`保存到 GitHub 失败：${error.message}`);
     });
   });
+  $("#publishDashboardButton").addEventListener("click", () => {
+    publishSharedDashboard().catch((error) => {
+      alert(`发布共享数据失败：${error.message}`);
+    });
+  });
   $("#githubToken").addEventListener("input", (event) => {
     saveSessionToken(event.target.value);
   });
@@ -1131,6 +1205,14 @@ async function handleFileUpload(event) {
     state.trendVendorStart = "";
     state.trendVendorEnd = "";
     renderAll();
+    const token = loadSessionToken();
+    if (token) {
+      publishSharedDashboard(`Sync dashboard data after upload: ${file.name}`).catch((error) => {
+        alert(`自动发布共享数据失败：${error.message}`);
+      });
+    } else {
+      $("#sourceLabel").textContent += "（仅本地更新，未发布共享）";
+    }
   } catch (error) {
     alert(`表格解析失败：${error.message}`);
   }
@@ -1297,4 +1379,5 @@ function appendSingleWeek(data, week, sourceFile) {
 
 wireEvents();
 renderAll();
+loadSharedDashboard();
 loadSharedMapping();

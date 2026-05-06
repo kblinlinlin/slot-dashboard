@@ -117,6 +117,10 @@ h3 {
   color: var(--muted);
 }
 
+.upload-card .ghost-button {
+  justify-self: start;
+}
+
 .summary-panel,
 .tab-panel {
   border: 1px solid var(--line);
