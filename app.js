@@ -108,6 +108,10 @@ function saveSessionToken(token) {
   }
 }
 
+function currentGithubToken() {
+  return $("#globalGithubToken")?.value.trim() || loadSessionToken();
+}
+
 function encodeBase64Utf8(text) {
   return btoa(unescape(encodeURIComponent(text)));
 }
@@ -864,7 +868,6 @@ function renderMappingManager() {
   });
   $("#mappingCount").textContent = `共 ${entries.length} 条`;
   $("#mappingSearch").value = state.mappingSearch;
-  $("#githubToken").value = loadSessionToken();
   $("#mappingTable").innerHTML = `
     <thead>
       <tr>
@@ -911,7 +914,7 @@ function saveMappingEntry() {
 async function saveGlobalMappingEntry() {
   const english = $("#mappingEnglish").value.trim();
   const chinese = $("#mappingChinese").value.trim();
-  const token = $("#githubToken").value.trim();
+  const token = currentGithubToken();
   if (!english || !chinese) {
     alert("请先填写英文游戏名和中文显示名。");
     return;
@@ -970,7 +973,7 @@ async function saveGlobalMappingEntry() {
 }
 
 async function publishSharedDashboard(customMessage = "") {
-  const token = $("#githubToken")?.value.trim() || loadSessionToken();
+  const token = currentGithubToken();
   if (!token) {
     alert("请先在映射页输入 GitHub Token，然后再发布共享数据。");
     return;
@@ -1049,6 +1052,8 @@ async function loadSharedDashboard() {
 
 function renderAll() {
   populateControls();
+  const tokenField = $("#globalGithubToken");
+  if (tokenField) tokenField.value = loadSessionToken();
   renderSummary();
   renderGameOverview();
   renderVendorOverview();
@@ -1162,7 +1167,7 @@ function wireEvents() {
       alert(`发布共享数据失败：${error.message}`);
     });
   });
-  $("#githubToken").addEventListener("input", (event) => {
+  $("#globalGithubToken").addEventListener("input", (event) => {
     saveSessionToken(event.target.value);
   });
   $("#mappingTable").addEventListener("click", (event) => {

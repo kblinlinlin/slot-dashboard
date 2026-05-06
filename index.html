@@ -18,6 +18,7 @@
           <span>上传完整看板 / 单周数据</span>
           <strong id="sourceLabel">当前加载：平台游戏数据看板.xlsx</strong>
           <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+          <label>GitHub Token<input id="globalGithubToken" type="password" placeholder="用于发布共享数据和共享映射" /></label>
           <button class="ghost-button" id="publishDashboardButton" type="button">发布当前数据到 GitHub</button>
         </label>
       </header>
@@ -125,7 +126,6 @@
             <div class="mapping-form">
               <label>英文游戏名<input id="mappingEnglish" type="text" placeholder="例如 Lucky Tycoon" /></label>
               <label>中文显示名<input id="mappingChinese" type="text" placeholder="例如 大富翁" /></label>
-              <label>GitHub Token<input id="githubToken" type="password" placeholder="仅你保存全局映射时使用" /></label>
               <div class="mapping-actions">
                 <button class="ghost-button" id="saveMappingButton" type="button">仅本地保存</button>
                 <button class="ghost-button" id="saveGlobalMappingButton" type="button">保存到 GitHub</button>
