@@ -511,6 +511,32 @@ svg {
   font-size: 18px;
 }
 
+.mapping-layout {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.mapping-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.mapping-form {
+  display: grid;
+  gap: 12px;
+}
+
+.mapping-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .empty-state {
   padding: 26px;
   color: var(--muted);
@@ -520,7 +546,8 @@ svg {
 @media (max-width: 980px) {
   .app-header,
   .chart-layout,
-  .pie-layout {
+  .pie-layout,
+  .mapping-layout {
     grid-template-columns: 1fr;
   }
 

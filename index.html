@@ -37,6 +37,7 @@
         <button type="button" class="tab" data-tab="vendorOverview">产商总览数据</button>
         <button type="button" class="tab" data-tab="gameTrend">游戏走势</button>
         <button type="button" class="tab" data-tab="vendorTrend">产商走势分析</button>
+        <button type="button" class="tab" data-tab="mappingManager">游戏名称映射</button>
       </nav>
 
       <section class="tab-panel is-active" id="gameOverview">
@@ -104,6 +105,39 @@
         </div>
         <div class="table-shell">
           <table class="data-table compact-table" id="vendorTrendTable"></table>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="mappingManager">
+        <div class="toolbar">
+          <label class="search-field">映射搜索<input id="mappingSearch" type="search" placeholder="输入英文名或中文名搜索" /></label>
+        </div>
+        <div class="mapping-layout">
+          <section class="mapping-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Mapping Editor</p>
+                <h2>新增或更新映射</h2>
+              </div>
+              <strong id="mappingCount"></strong>
+            </div>
+            <div class="mapping-form">
+              <label>英文游戏名<input id="mappingEnglish" type="text" placeholder="例如 Lucky Tycoon" /></label>
+              <label>中文显示名<input id="mappingChinese" type="text" placeholder="例如 大富翁" /></label>
+              <button class="ghost-button" id="saveMappingButton" type="button">保存映射</button>
+            </div>
+          </section>
+          <section class="mapping-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Mapping List</p>
+                <h2>当前游戏名称映射</h2>
+              </div>
+            </div>
+            <div class="table-shell">
+              <table class="data-table compact-table" id="mappingTable"></table>
+            </div>
+          </section>
         </div>
       </section>
     </main>

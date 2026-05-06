@@ -49,6 +49,7 @@ let state = {
   overviewTopN: "50",
   vendorTopN: "50",
   gameSearch: "",
+  mappingSearch: "",
   trendGames: [],
   trendGameSearch: "",
   trendGamePeriod: "12",
@@ -802,6 +803,77 @@ function renderVendorTrendTable(seriesList, metric) {
   `;
 }
 
+function mappingEntries() {
+  const mapping = normalizeMapping(state.data.mapping ?? {});
+  const games = getAllGames();
+  const gameIndex = new Map(games.map((game) => [game.游戏Key ?? gameKey(game.英文名称), game]));
+  const keys = [...new Set([...Object.keys(mapping), ...games.map((game) => game.游戏Key ?? gameKey(game.英文名称))])];
+  return keys.map((key) => {
+    const game = gameIndex.get(key);
+    const english = game?.英文名称 || key;
+    const chinese = mapping[key] || "";
+    const rank = rankOf(indexByEnglish(currentRows()).get(key));
+    return { key, english, chinese, rank };
+  }).sort((a, b) => {
+    const rankA = a.rank ?? 999999;
+    const rankB = b.rank ?? 999999;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.english.localeCompare(b.english, "en");
+  });
+}
+
+function renderMappingManager() {
+  const entries = mappingEntries();
+  const query = state.mappingSearch.trim().toLowerCase();
+  const rows = entries.filter((entry) => {
+    if (!query) return true;
+    return `${entry.english} ${entry.chinese}`.toLowerCase().includes(query);
+  });
+  $("#mappingCount").textContent = `共 ${entries.length} 条`;
+  $("#mappingSearch").value = state.mappingSearch;
+  $("#mappingTable").innerHTML = `
+    <thead>
+      <tr>
+        <th>本周排名</th>
+        <th>英文名</th>
+        <th>中文映射</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((entry) => `
+        <tr>
+          <td class="num">${entry.rank ? `#${formatNumber(entry.rank, "people")}` : "-"}</td>
+          <td>${escapeHtml(entry.english)}</td>
+          <td>${escapeHtml(entry.chinese || "-")}</td>
+          <td><button class="ghost-button mapping-edit-button" type="button" data-key="${escapeHtml(entry.key)}" data-english="${escapeHtml(entry.english)}" data-chinese="${escapeHtml(entry.chinese)}">编辑</button></td>
+        </tr>
+      `).join("") || `<tr><td colspan="4" class="empty-state">没有符合条件的映射</td></tr>`}
+    </tbody>
+  `;
+}
+
+function saveMappingEntry() {
+  const english = $("#mappingEnglish").value.trim();
+  const chinese = $("#mappingChinese").value.trim();
+  if (!english || !chinese) {
+    alert("请先填写英文游戏名和中文显示名。");
+    return;
+  }
+  const nextMapping = {
+    ...normalizeMapping(state.data.mapping ?? {}),
+    [gameKey(english)]: chinese,
+  };
+  state.data = normalizeWorkbookData({
+    ...state.data,
+    mapping: nextMapping,
+  });
+  saveStoredData();
+  $("#mappingEnglish").value = english;
+  $("#mappingChinese").value = chinese;
+  renderAll();
+}
+
 function renderAll() {
   populateControls();
   renderSummary();
@@ -809,6 +881,7 @@ function renderAll() {
   renderVendorOverview();
   renderGameTrend();
   renderVendorTrend();
+  renderMappingManager();
 }
 
 function populateControls() {
@@ -900,6 +973,17 @@ function wireEvents() {
   $("#trendGameSearch").addEventListener("input", (event) => {
     state.trendGameSearch = event.target.value;
     populateControls();
+  });
+  $("#mappingSearch").addEventListener("input", (event) => {
+    state.mappingSearch = event.target.value;
+    renderMappingManager();
+  });
+  $("#saveMappingButton").addEventListener("click", saveMappingEntry);
+  $("#mappingTable").addEventListener("click", (event) => {
+    const button = event.target.closest(".mapping-edit-button");
+    if (!button) return;
+    $("#mappingEnglish").value = button.dataset.english || "";
+    $("#mappingChinese").value = button.dataset.chinese || "";
   });
   $("#copySummaryButton").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("#weeklySummary").textContent);
