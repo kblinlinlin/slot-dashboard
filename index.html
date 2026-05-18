@@ -3,57 +3,175 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>站点已下线</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #f4f7f6;
-        --panel: #ffffff;
-        --ink: #17212b;
-        --muted: #667085;
-        --line: #d9e1e8;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 24px;
-        font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
-        background: var(--bg);
-        color: var(--ink);
-      }
-
-      main {
-        width: min(560px, 100%);
-        padding: 32px 28px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        text-align: center;
-      }
-
-      h1 {
-        margin: 0 0 10px;
-        font-size: 30px;
-      }
-
-      p {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.7;
-      }
-    </style>
+    <title>平台 Slot 游戏数据看板</title>
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main>
-      <h1>站点已临时下线</h1>
-      <p>该页面因安全原因暂停访问。请联系维护人员获取后续安排。</p>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Internal Slot Dashboard</p>
+          <h1>平台 Slot 游戏数据看板</h1>
+          <p class="subtitle">基于平台提供的脱敏 Excel 数据，按周查看游戏、产商与趋势变化。</p>
+        </div>
+        <section class="upload-card">
+          <span>共享数据状态</span>
+          <strong id="sourceLabel">当前加载：平台游戏数据看板.xlsx</strong>
+          <div class="shared-status">
+            <p id="sharedCurrentWeek">当前共享本周：-</p>
+            <p id="sharedPreviousWeek">当前共享上周：-</p>
+          </div>
+          <div class="admin-shell">
+            <div class="admin-head">
+              <div>
+                <p class="eyebrow">Admin</p>
+                <p id="adminModeHint" class="admin-hint">当前为只读模式</p>
+              </div>
+              <button class="ghost-button" id="adminModeToggle" type="button">进入管理员模式</button>
+            </div>
+            <div class="admin-panel" id="adminPanel">
+              <label>
+                GitHub Token
+                <input id="globalGithubToken" type="password" placeholder="用于发布共享数据和共享映射" />
+              </label>
+              <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
+              <div class="upload-actions">
+                <button class="ghost-button" id="publishDashboardButton" type="button">发布当前数据到 GitHub</button>
+                <button class="ghost-button" id="reloadSharedButton" type="button">清除本地缓存并重新加载共享数据</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </header>
+
+      <section class="summary-panel" aria-label="自动总结">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Auto Report</p>
+            <h2>本周自动总结</h2>
+          </div>
+          <button class="ghost-button" id="copySummaryButton" type="button">复制总结</button>
+        </div>
+        <div class="report-box" id="weeklySummary"></div>
+      </section>
+
+      <nav class="tabs" aria-label="看板标签页">
+        <button type="button" class="tab is-active" data-tab="gameOverview">游戏总览数据</button>
+        <button type="button" class="tab" data-tab="vendorOverview">产商总览数据</button>
+        <button type="button" class="tab" data-tab="gameTrend">游戏走势</button>
+        <button type="button" class="tab" data-tab="vendorTrend">产商走势分析</button>
+        <button type="button" class="tab" data-tab="mappingManager">游戏名称映射</button>
+      </nav>
+
+      <section class="tab-panel is-active" id="gameOverview">
+        <div class="toolbar">
+          <label>产商<select id="overviewVendor"></select></label>
+          <label>范围<select id="overviewTopN"></select></label>
+          <label class="search-field">游戏搜索<input id="gameSearch" type="search" placeholder="输入中文或英文名" /></label>
+        </div>
+        <div class="table-shell">
+          <table class="data-table" id="gameOverviewTable"></table>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="vendorOverview">
+        <div class="toolbar">
+          <label>统计范围<select id="vendorTopN"></select></label>
+        </div>
+        <div class="metric-grid" id="vendorMetricGrid"></div>
+        <div class="table-shell">
+          <table class="data-table" id="vendorOverviewTable"></table>
+        </div>
+        <div class="vendor-lists" id="vendorRankLists"></div>
+      </section>
+
+      <section class="tab-panel" id="gameTrend">
+        <div class="toolbar">
+          <label class="search-field">游戏搜索<input id="trendGameSearch" type="search" placeholder="输入中文或英文名筛选" /></label>
+          <label class="search-field">游戏<select id="trendGame" multiple></select></label>
+          <label>时间周期<select id="trendGamePeriod"></select></label>
+          <label class="custom-period" id="gameStartWrap">开始周<select id="trendGameStart"></select></label>
+          <label class="custom-period" id="gameEndWrap">结束周<select id="trendGameEnd"></select></label>
+          <label>指标<select id="trendGameMetric"></select></label>
+        </div>
+        <div class="chart-layout">
+          <div class="chart-panel">
+            <svg id="gameTrendChart" role="img" aria-label="游戏走势折线图"></svg>
+          </div>
+          <div class="side-stats" id="gameTrendStats"></div>
+        </div>
+        <div class="table-shell">
+          <table class="data-table compact-table" id="gameTrendTable"></table>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="vendorTrend">
+        <div class="toolbar">
+          <label>产商<select id="trendVendor" multiple></select></label>
+          <label>时间周期<select id="trendVendorPeriod"></select></label>
+          <label class="custom-period" id="vendorStartWrap">开始周<select id="trendVendorStart"></select></label>
+          <label class="custom-period" id="vendorEndWrap">结束周<select id="trendVendorEnd"></select></label>
+          <label>统计范围<select id="trendVendorTopN"></select></label>
+          <label>指标<select id="trendVendorMetric"></select></label>
+        </div>
+        <div class="chart-layout">
+          <div class="chart-panel">
+            <svg id="vendorTrendChart" role="img" aria-label="产商走势折线图"></svg>
+          </div>
+          <div class="side-stats" id="vendorTrendStats"></div>
+        </div>
+        <div class="chart-layout pie-layout">
+          <div class="chart-panel">
+            <svg id="vendorBetPieChart" role="img" aria-label="产商总下注金额饼图"></svg>
+          </div>
+          <div class="side-stats" id="vendorBetPieStats"></div>
+        </div>
+        <div class="table-shell">
+          <table class="data-table compact-table" id="vendorTrendTable"></table>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="mappingManager">
+        <div class="toolbar">
+          <label class="search-field">映射搜索<input id="mappingSearch" type="search" placeholder="输入英文名或中文名搜索" /></label>
+        </div>
+        <div class="read-only-banner" id="mappingReadOnlyNotice">当前为只读模式。进入管理员模式后，才可新增映射、上传周数据并发布到 GitHub。</div>
+        <div class="mapping-layout">
+          <section class="mapping-card" id="mappingEditorCard">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Mapping Editor</p>
+                <h2>新增或更新映射</h2>
+              </div>
+              <strong id="mappingCount"></strong>
+            </div>
+            <div class="mapping-form">
+              <label>英文游戏名<input id="mappingEnglish" type="text" placeholder="例如 Lucky Tycoon" /></label>
+              <label>中文显示名<input id="mappingChinese" type="text" placeholder="例如 大富翁" /></label>
+              <div class="mapping-actions">
+                <button class="ghost-button" id="saveMappingButton" type="button">仅本地保存</button>
+                <button class="ghost-button" id="saveGlobalMappingButton" type="button">保存到 GitHub</button>
+              </div>
+              <p class="mapping-note">保存到 GitHub 后，其他访问者在服务器更新后刷新页面即可看到新映射。</p>
+            </div>
+          </section>
+          <section class="mapping-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Mapping List</p>
+                <h2>当前游戏名称映射</h2>
+              </div>
+            </div>
+            <div class="table-shell">
+              <table class="data-table compact-table" id="mappingTable"></table>
+            </div>
+          </section>
+        </div>
+      </section>
     </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="data/initial-data.js"></script>
+    <script src="app.js"></script>
   </body>
 </html>

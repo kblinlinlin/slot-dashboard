@@ -135,6 +135,49 @@ h3 {
   gap: 8px;
 }
 
+.admin-shell {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-panel {
+  display: none;
+  gap: 10px;
+}
+
+.admin-panel.is-open {
+  display: grid;
+}
+
+.read-only-banner {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #fbfcfd;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
 .upload-card .ghost-button {
   justify-self: start;
 }

@@ -1,6 +1,7 @@
 const INITIAL_DATA = window.INITIAL_WORKBOOK_DATA;
 const STORAGE_KEY = "slot-dashboard-workbook-data-v1";
 const TOKEN_STORAGE_KEY = "slot-dashboard-github-token-session";
+const ADMIN_MODE_KEY = "slot-dashboard-admin-mode-session";
 const EXCLUDED_GAME_KEYS = new Set(["game lobby", "none", "secretary"]);
 const GITHUB_SYNC = {
   owner: "kblinlinlin",
@@ -57,6 +58,8 @@ const VENDOR_METRICS = [
 
 let state = {
   data: normalizeWorkbookData(loadStoredData() ?? INITIAL_DATA),
+  adminAvailable: isLocalAdminHost(),
+  adminMode: loadAdminMode(),
   activeTab: "gameOverview",
   overviewVendor: "全部",
   overviewTopN: "50",
@@ -106,6 +109,37 @@ function saveSessionToken(token) {
   } catch {
     // Ignore storage failures.
   }
+}
+
+function isLocalAdminHost() {
+  const { protocol, hostname } = window.location;
+  return protocol === "file:" || hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1" || hostname === "";
+}
+
+function loadAdminMode() {
+  try {
+    return isLocalAdminHost() && sessionStorage.getItem(ADMIN_MODE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function saveAdminMode(enabled) {
+  try {
+    sessionStorage.setItem(ADMIN_MODE_KEY, enabled ? "true" : "false");
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function requireAdminMode(actionLabel = "执行此操作") {
+  if (!state.adminAvailable) {
+    alert("管理员功能仅在本机访问时开放。");
+    return false;
+  }
+  if (state.adminMode) return true;
+  alert(`当前为只读模式，请先进入管理员模式后再${actionLabel}。`);
+  return false;
 }
 
 function currentGithubToken() {
@@ -935,6 +969,7 @@ function renderMappingManager() {
 }
 
 function saveMappingEntry() {
+  if (!requireAdminMode("保存映射")) return;
   const english = $("#mappingEnglish").value.trim();
   const chinese = $("#mappingChinese").value.trim();
   if (!english || !chinese) {
@@ -956,6 +991,7 @@ function saveMappingEntry() {
 }
 
 async function saveGlobalMappingEntry() {
+  if (!requireAdminMode("发布映射")) return;
   const english = $("#mappingEnglish").value.trim();
   const chinese = $("#mappingChinese").value.trim();
   const token = currentGithubToken();
@@ -996,6 +1032,7 @@ async function saveGlobalMappingEntry() {
 }
 
 async function publishSharedDashboard(customMessage = "") {
+  if (!requireAdminMode("发布共享数据")) return;
   const token = currentGithubToken();
   if (!token) {
     alert("请先在页面顶部输入 GitHub Token，然后再发布共享数据。");
@@ -1063,6 +1100,39 @@ function renderSharedStatus() {
   if (previousTarget) previousTarget.textContent = `当前共享上周：${previousWeek}`;
 }
 
+function renderAdminMode() {
+  const adminShell = document.querySelector(".admin-shell");
+  const adminPanel = $("#adminPanel");
+  const adminHint = $("#adminModeHint");
+  const adminToggle = $("#adminModeToggle");
+  const readOnlyNotice = $("#mappingReadOnlyNotice");
+  const editorCard = $("#mappingEditorCard");
+  const controls = [
+    $("#globalGithubToken"),
+    $("#fileInput"),
+    $("#mappingEnglish"),
+    $("#mappingChinese"),
+    $("#saveMappingButton"),
+    $("#saveGlobalMappingButton"),
+    $("#publishDashboardButton"),
+  ].filter(Boolean);
+
+  if (adminShell) adminShell.classList.toggle("is-hidden", !state.adminAvailable);
+  if (adminPanel) adminPanel.classList.toggle("is-open", state.adminMode);
+  if (adminHint) adminHint.textContent = state.adminMode ? "当前为管理员模式" : "当前为只读模式";
+  if (adminToggle) adminToggle.textContent = state.adminMode ? "退出管理员模式" : "进入管理员模式";
+  if (readOnlyNotice) {
+    readOnlyNotice.classList.toggle("is-hidden", state.adminAvailable && state.adminMode);
+    readOnlyNotice.textContent = state.adminAvailable
+      ? "当前为只读模式。进入管理员模式后，才可新增映射、上传周数据并发布到 GitHub。"
+      : "管理员功能仅在本机访问时开放，服务器访问仅提供查看能力。";
+  }
+  if (editorCard) editorCard.classList.toggle("is-hidden", !state.adminAvailable || !state.adminMode);
+  controls.forEach((element) => {
+    element.disabled = !state.adminAvailable || !state.adminMode;
+  });
+}
+
 async function reloadSharedDataFromRemote() {
   try {
     localStorage.removeItem(STORAGE_KEY);
@@ -1085,6 +1155,7 @@ function renderAll() {
   const tokenField = $("#globalGithubToken");
   if (tokenField) tokenField.value = loadSessionToken();
   renderSharedStatus();
+  renderAdminMode();
   renderSummary();
   renderGameOverview();
   renderVendorOverview();
@@ -1187,6 +1258,12 @@ function wireEvents() {
     state.mappingSearch = event.target.value;
     renderMappingManager();
   });
+  $("#adminModeToggle").addEventListener("click", () => {
+    if (!state.adminAvailable) return;
+    state.adminMode = !state.adminMode;
+    saveAdminMode(state.adminMode);
+    renderAdminMode();
+  });
   $("#saveMappingButton").addEventListener("click", saveMappingEntry);
   $("#saveGlobalMappingButton").addEventListener("click", () => {
     saveGlobalMappingEntry().catch((error) => {
@@ -1217,7 +1294,7 @@ function wireEvents() {
   });
   $("#mappingTable").addEventListener("click", (event) => {
     const button = event.target.closest(".mapping-edit-button");
-    if (!button) return;
+    if (!button || !state.adminMode) return;
     $("#mappingEnglish").value = button.dataset.english || "";
     $("#mappingChinese").value = button.dataset.chinese || "";
   });
@@ -1230,6 +1307,10 @@ function wireEvents() {
 }
 
 async function handleFileUpload(event) {
+  if (!requireAdminMode("上传周数据")) {
+    event.target.value = "";
+    return;
+  }
   const file = event.target.files?.[0];
   if (!file) return;
   if (!window.XLSX) {
