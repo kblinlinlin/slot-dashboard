@@ -17,6 +17,7 @@ const GITHUB_DASHBOARD_SYNC = {
 };
 
 const VENDORS = ["AA", "IGC", "KK"];
+const NEW_GAME_VENDOR_ORDER = ["IGC", "AA", "KK"];
 const TOP_OPTIONS = [
   { label: "Top 10", value: "10" },
   { label: "Top 20", value: "20" },
@@ -366,6 +367,80 @@ function getAllGames() {
   });
 }
 
+function dashboardYear() {
+  const referencePeriod = currentPeriod() || state.data.weeks[0]?.period || "";
+  const match = normalizePeriod(referencePeriod).match(/^(\d{4})-/);
+  return Number(match?.[1] || new Date().getFullYear());
+}
+
+function collectNewGameSummary(year = dashboardYear()) {
+  const currentIndex = indexByEnglish(currentRows());
+  const history = new Map();
+
+  for (const week of chronologicalWeeks()) {
+    for (const row of week.rows) {
+      const key = row.游戏Key ?? gameKey(row.英文名称);
+      const rank = rankOf(row);
+      const bet = toNumber(row.下注金额);
+      if (!history.has(key)) {
+        history.set(key, {
+          key,
+          english: row.英文名称,
+          displayName: row.显示名称,
+          vendor: row.产商,
+          launchPeriod: week.period,
+          launchStart: week.start,
+          firstSeenYear: Number(String(week.start || "").slice(0, 4)),
+          bestRank: rank,
+          bestRankPeriod: rank !== null && rank > 0 ? week.period : "",
+          bestBet: bet ?? null,
+          bestBetPeriod: bet !== null ? week.period : "",
+        });
+      }
+      const item = history.get(key);
+      item.displayName = row.显示名称 || item.displayName;
+      item.vendor = row.产商 || item.vendor;
+      if (rank !== null && rank > 0 && (item.bestRank === null || item.bestRank === undefined || rank < item.bestRank)) {
+        item.bestRank = rank;
+        item.bestRankPeriod = week.period;
+      }
+      if (bet !== null && (item.bestBet === null || item.bestBet === undefined || bet > item.bestBet)) {
+        item.bestBet = bet;
+        item.bestBetPeriod = week.period;
+      }
+    }
+  }
+
+  const byVendor = Object.fromEntries(NEW_GAME_VENDOR_ORDER.map((vendor) => [vendor, []]));
+  for (const item of history.values()) {
+    if (item.firstSeenYear !== year) continue;
+    if (!byVendor[item.vendor]) continue;
+    if (!String(item.english ?? "").trim() && !String(item.displayName ?? "").trim()) continue;
+    const currentRow = currentIndex.get(item.key);
+    byVendor[item.vendor].push({
+      ...item,
+      currentRank: rankOf(currentRow),
+      currentBet: toNumber(currentRow?.下注金额),
+    });
+  }
+
+  for (const vendor of NEW_GAME_VENDOR_ORDER) {
+    byVendor[vendor].sort((a, b) => {
+      if (a.launchPeriod !== b.launchPeriod) return b.launchPeriod.localeCompare(a.launchPeriod);
+      const rankA = a.currentRank ?? 999999;
+      const rankB = b.currentRank ?? 999999;
+      if (rankA !== rankB) return rankA - rankB;
+      return a.displayName.localeCompare(b.displayName, "zh-CN");
+    });
+  }
+
+  return {
+    year,
+    byVendor,
+    counts: Object.fromEntries(NEW_GAME_VENDOR_ORDER.map((vendor) => [vendor, byVendor[vendor].length])),
+  };
+}
+
 function vendorTotals(rows) {
   const result = {};
   for (const vendor of VENDORS) {
@@ -631,6 +706,61 @@ function renderVendorOverview() {
             return `<li><span>${escapeHtml(row.显示名称)}</span><strong class="${changeClass(rankOf(row), rankOf(previous), true)}">#${formatNumber(rankOf(row), "people")} / 上周 #${formatNumber(rankOf(previous), "people")}</strong></li>`;
           }).join("") || `<li><span>暂无数据</span><strong>-</strong></li>`}
         </ol>
+      </section>
+    `;
+  }).join("");
+}
+
+function renderNewGameSummary() {
+  const summary = collectNewGameSummary();
+  const yearLabel = $("#newGameSummaryYearLabel");
+  if (yearLabel) yearLabel.textContent = `统计年度：${summary.year}`;
+
+  $("#newGameMetricGrid").innerHTML = NEW_GAME_VENDOR_ORDER.map((vendor) => `
+    <article class="metric-card">
+      <span>${vendor} 今年上新款数</span>
+      <strong>${formatNumber(summary.counts[vendor], "people")}</strong>
+      <em>${summary.year} 年累计</em>
+    </article>
+  `).join("");
+
+  $("#newGameVendorSections").innerHTML = NEW_GAME_VENDOR_ORDER.map((vendor) => {
+    const rows = summary.byVendor[vendor];
+    return `
+      <section class="mapping-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">${vendor}</p>
+            <h3>${vendor} 今年上线新游列表</h3>
+          </div>
+          <strong>${formatNumber(rows.length, "people")} 款</strong>
+        </div>
+        <div class="table-shell">
+          <table class="data-table compact-table">
+            <thead>
+              <tr>
+                <th>游戏</th>
+                <th>上线时间</th>
+                <th>本周排名</th>
+                <th>本周下注金额</th>
+                <th>历史最高排名</th>
+                <th>历史最高下注金额</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row) => `
+                <tr>
+                  <td><span class="game-title">${escapeHtml(row.displayName)}</span><span class="game-subtitle">${escapeHtml(row.english)}</span></td>
+                  <td>${periodLabel(row.launchPeriod)}</td>
+                  <td class="num">${formatNumber(row.currentRank, "people")}</td>
+                  <td class="num">${formatNumber(row.currentBet)}</td>
+                  <td class="num">${row.bestRankPeriod ? `${formatNumber(row.bestRank, "people")}（${periodLabel(row.bestRankPeriod)}）` : formatNumber(row.bestRank, "people")}</td>
+                  <td class="num">${row.bestBetPeriod ? `${formatNumber(row.bestBet)}（${periodLabel(row.bestBetPeriod)}）` : formatNumber(row.bestBet)}</td>
+                </tr>
+              `).join("") || `<tr><td colspan="6" class="empty-state">今年暂无新游数据</td></tr>`}
+            </tbody>
+          </table>
+        </div>
       </section>
     `;
   }).join("");
@@ -1159,6 +1289,7 @@ function renderAll() {
   renderSummary();
   renderGameOverview();
   renderVendorOverview();
+  renderNewGameSummary();
   renderGameTrend();
   renderVendorTrend();
   renderMappingManager();

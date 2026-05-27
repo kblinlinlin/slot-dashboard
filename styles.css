@@ -587,6 +587,12 @@ svg {
   gap: 14px;
 }
 
+.new-game-sections {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
 .mapping-card {
   border: 1px solid var(--line);
   border-radius: 8px;

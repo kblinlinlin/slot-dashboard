@@ -58,6 +58,7 @@
       <nav class="tabs" aria-label="看板标签页">
         <button type="button" class="tab is-active" data-tab="gameOverview">游戏总览数据</button>
         <button type="button" class="tab" data-tab="vendorOverview">产商总览数据</button>
+        <button type="button" class="tab" data-tab="newGameSummary">新游汇总</button>
         <button type="button" class="tab" data-tab="gameTrend">游戏走势</button>
         <button type="button" class="tab" data-tab="vendorTrend">产商走势分析</button>
         <button type="button" class="tab" data-tab="mappingManager">游戏名称映射</button>
@@ -83,6 +84,18 @@
           <table class="data-table" id="vendorOverviewTable"></table>
         </div>
         <div class="vendor-lists" id="vendorRankLists"></div>
+      </section>
+
+      <section class="tab-panel" id="newGameSummary">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">New Game Summary</p>
+            <h2>今年各产商新游汇总</h2>
+          </div>
+          <strong id="newGameSummaryYearLabel"></strong>
+        </div>
+        <div class="metric-grid" id="newGameMetricGrid"></div>
+        <div class="new-game-sections" id="newGameVendorSections"></div>
       </section>
 
       <section class="tab-panel" id="gameTrend">
