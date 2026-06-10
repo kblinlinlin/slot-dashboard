@@ -61,11 +61,16 @@
         <button type="button" class="tab" data-tab="newGameSummary">新游汇总</button>
         <button type="button" class="tab" data-tab="gameTrend">游戏走势</button>
         <button type="button" class="tab" data-tab="vendorTrend">产商走势分析</button>
-        <button type="button" class="tab" data-tab="mappingManager">游戏名称映射</button>
       </nav>
 
       <section class="tab-panel is-active" id="gameOverview">
         <div class="toolbar">
+          <label>排行周期<select id="overviewPeriod"></select></label>
+          <label class="custom-period" id="overviewStartWrap">开始周<select id="overviewStart"></select></label>
+          <label class="custom-period" id="overviewEndWrap">结束周<select id="overviewEnd"></select></label>
+          <label>对比周期<select id="overviewComparePeriod"></select></label>
+          <label class="custom-period" id="overviewCompareStartWrap">对比开始周<select id="overviewCompareStart"></select></label>
+          <label class="custom-period" id="overviewCompareEndWrap">对比结束周<select id="overviewCompareEnd"></select></label>
           <label>产商<select id="overviewVendor"></select></label>
           <label>范围<select id="overviewTopN"></select></label>
           <label class="search-field">游戏搜索<input id="gameSearch" type="search" placeholder="输入中文或英文名" /></label>
@@ -144,43 +149,6 @@
         </div>
       </section>
 
-      <section class="tab-panel" id="mappingManager">
-        <div class="toolbar">
-          <label class="search-field">映射搜索<input id="mappingSearch" type="search" placeholder="输入英文名或中文名搜索" /></label>
-        </div>
-        <div class="read-only-banner" id="mappingReadOnlyNotice">当前为只读模式。进入管理员模式后，才可新增映射、上传周数据并发布到 GitHub。</div>
-        <div class="mapping-layout">
-          <section class="mapping-card" id="mappingEditorCard">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Mapping Editor</p>
-                <h2>新增或更新映射</h2>
-              </div>
-              <strong id="mappingCount"></strong>
-            </div>
-            <div class="mapping-form">
-              <label>英文游戏名<input id="mappingEnglish" type="text" placeholder="例如 Lucky Tycoon" /></label>
-              <label>中文显示名<input id="mappingChinese" type="text" placeholder="例如 大富翁" /></label>
-              <div class="mapping-actions">
-                <button class="ghost-button" id="saveMappingButton" type="button">仅本地保存</button>
-                <button class="ghost-button" id="saveGlobalMappingButton" type="button">保存到 GitHub</button>
-              </div>
-              <p class="mapping-note">保存到 GitHub 后，其他访问者在服务器更新后刷新页面即可看到新映射。</p>
-            </div>
-          </section>
-          <section class="mapping-card">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Mapping List</p>
-                <h2>当前游戏名称映射</h2>
-              </div>
-            </div>
-            <div class="table-shell">
-              <table class="data-table compact-table" id="mappingTable"></table>
-            </div>
-          </section>
-        </div>
-      </section>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>

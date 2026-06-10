@@ -3,18 +3,14 @@ const STORAGE_KEY = "slot-dashboard-workbook-data-v1";
 const TOKEN_STORAGE_KEY = "slot-dashboard-github-token-session";
 const ADMIN_MODE_KEY = "slot-dashboard-admin-mode-session";
 const EXCLUDED_GAME_KEYS = new Set(["game lobby", "none", "secretary"]);
-const GITHUB_SYNC = {
-  owner: "kblinlinlin",
-  repo: "slot-dashboard",
-  branch: "main",
-  path: "data/shared-mapping.json",
-};
 const GITHUB_DASHBOARD_SYNC = {
   owner: "kblinlinlin",
   repo: "slot-dashboard",
   branch: "main",
   path: "data/shared-dashboard.json",
 };
+const GITHUB_RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_DASHBOARD_SYNC.owner}/${GITHUB_DASHBOARD_SYNC.repo}/${GITHUB_DASHBOARD_SYNC.branch}`;
+const MAPPING_CSV_PATH = "data/game-name-mapping.csv";
 
 const VENDORS = ["AA", "IGC", "KK"];
 const NEW_GAME_VENDOR_ORDER = ["IGC", "AA", "KK"];
@@ -24,6 +20,20 @@ const TOP_OPTIONS = [
   { label: "Top 30", value: "30" },
   { label: "Top 50", value: "50" },
   { label: "全部", value: "all" },
+];
+const OVERVIEW_PERIOD_OPTIONS = [
+  { label: "本周", value: "week" },
+  { label: "本月", value: "month" },
+  { label: "本季度", value: "quarter" },
+  { label: "本年", value: "year" },
+  { label: "自定义", value: "custom" },
+];
+const OVERVIEW_COMPARE_PERIOD_OPTIONS = [
+  { label: "上周", value: "week" },
+  { label: "上月", value: "month" },
+  { label: "上季度", value: "quarter" },
+  { label: "上年", value: "year" },
+  { label: "自定义", value: "custom" },
 ];
 const PERIOD_OPTIONS = [
   { label: "最近 4 周", value: "4" },
@@ -62,6 +72,12 @@ let state = {
   adminAvailable: isLocalAdminHost(),
   adminMode: loadAdminMode(),
   activeTab: "gameOverview",
+  overviewPeriod: "week",
+  overviewStart: "",
+  overviewEnd: "",
+  overviewComparePeriod: "week",
+  overviewCompareStart: "",
+  overviewCompareEnd: "",
   overviewVendor: "全部",
   overviewTopN: "50",
   vendorTopN: "50",
@@ -241,6 +257,130 @@ function periodLabel(period) {
   return normalizePeriod(period).replace("_", " 至 ");
 }
 
+function periodStartDate(period) {
+  const match = normalizePeriod(period).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function addMonths(date, months) {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
+}
+
+function overviewPeriodKey(date, mode) {
+  if (!date) return "";
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  if (mode === "year") return String(year);
+  if (mode === "quarter") return `${year}-Q${Math.floor((month - 1) / 3) + 1}`;
+  if (mode === "month") return `${year}-${String(month).padStart(2, "0")}`;
+  return normalizePeriod(currentPeriod());
+}
+
+function previousOverviewPeriodKey(date, mode) {
+  if (!date) return "";
+  if (mode === "year") return String(date.getFullYear() - 1);
+  if (mode === "quarter") {
+    const currentQuarterStartMonth = Math.floor(date.getMonth() / 3) * 3;
+    return overviewPeriodKey(new Date(date.getFullYear(), currentQuarterStartMonth - 3, 1), "quarter");
+  }
+  if (mode === "month") return overviewPeriodKey(addMonths(date, -1), "month");
+  return normalizePeriod(previousPeriod());
+}
+
+function overviewComparePeriodKey(date, mode) {
+  if (mode === "week") return normalizePeriod(previousPeriod());
+  if (mode === "custom") return "";
+  return previousOverviewPeriodKey(date, mode);
+}
+
+function optionLabel(options, value) {
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
+function overviewPeriodTitle(mode, periodKey) {
+  if (mode === "year") return `${periodKey} 年`;
+  if (mode === "quarter") return periodKey.replace("-Q", " 年 Q");
+  if (mode === "month") return `${periodKey.replace("-", " 年 ")} 月`;
+  return periodLabel(periodKey);
+}
+
+function weeksByOverviewPeriod(mode, periodKey) {
+  if (mode === "week") {
+    const week = state.data.weeks.find((item) => normalizePeriod(item.period) === periodKey);
+    return week ? [week] : [];
+  }
+  return state.data.weeks.filter((week) => overviewPeriodKey(periodStartDate(week.period), mode) === periodKey);
+}
+
+function overviewCustomWeeks(startPeriod, endPeriod) {
+  return selectedWeeks("custom", startPeriod, endPeriod);
+}
+
+function aggregateGameRows(weeks) {
+  const fields = ["下注金额", "游戏输赢", "投注次数", "新增玩家", "活跃玩家"];
+  const rowsByGame = new Map();
+  for (const week of weeks) {
+    for (const row of week.rows) {
+      if (isExcludedGame(row)) continue;
+      const key = row.游戏Key ?? gameKey(row.英文名称);
+      if (!key) continue;
+      if (!rowsByGame.has(key)) {
+        rowsByGame.set(key, {
+          ...row,
+          游戏Key: key,
+          下注金额: 0,
+          游戏输赢: 0,
+          投注次数: 0,
+          新增玩家: 0,
+          活跃玩家: 0,
+        });
+      }
+      const aggregate = rowsByGame.get(key);
+      aggregate.显示名称 = row.显示名称 || aggregate.显示名称;
+      aggregate.英文名称 = row.英文名称 || aggregate.英文名称;
+      aggregate.产商 = row.产商 || aggregate.产商;
+      for (const field of fields) {
+        aggregate[field] += toNumber(row[field]) ?? 0;
+      }
+    }
+  }
+  return [...rowsByGame.values()]
+    .sort((a, b) => {
+      const betDelta = (toNumber(b.下注金额) ?? 0) - (toNumber(a.下注金额) ?? 0);
+      if (Math.abs(betDelta) > 0.000001) return betDelta;
+      return String(a.显示名称 || a.英文名称).localeCompare(String(b.显示名称 || b.英文名称), "zh-CN");
+    })
+    .map((row, index) => ({ ...row, 排名: index + 1 }));
+}
+
+function overviewRowsByPeriod() {
+  const referenceDate = periodStartDate(currentPeriod());
+  const currentKey = state.overviewPeriod === "custom"
+    ? ""
+    : state.overviewPeriod === "week"
+    ? normalizePeriod(currentPeriod())
+    : overviewPeriodKey(referenceDate, state.overviewPeriod);
+  const previousKey = overviewComparePeriodKey(referenceDate, state.overviewComparePeriod);
+  const currentWeeks = state.overviewPeriod === "custom"
+    ? overviewCustomWeeks(state.overviewStart, state.overviewEnd)
+    : weeksByOverviewPeriod(state.overviewPeriod, currentKey);
+  const previousWeeks = state.overviewComparePeriod === "custom"
+    ? overviewCustomWeeks(state.overviewCompareStart, state.overviewCompareEnd)
+    : weeksByOverviewPeriod(state.overviewComparePeriod, previousKey);
+  return {
+    current: state.overviewPeriod === "week"
+      ? currentRows()
+      : aggregateGameRows(currentWeeks),
+    previous: state.overviewComparePeriod === "week"
+      ? previousRows()
+      : aggregateGameRows(previousWeeks),
+    currentLabel: optionLabel(OVERVIEW_PERIOD_OPTIONS, state.overviewPeriod),
+    previousLabel: optionLabel(OVERVIEW_COMPARE_PERIOD_OPTIONS, state.overviewComparePeriod),
+    title: state.overviewPeriod === "custom" ? "自定义时间段" : overviewPeriodTitle(state.overviewPeriod, currentKey),
+  };
+}
+
 function vendorFromGameId(gameId) {
   if (gameId === null || gameId === undefined || gameId === "") return "未知";
   const text = String(Number.isInteger(gameId) ? gameId : String(gameId).split(".")[0]);
@@ -248,6 +388,10 @@ function vendorFromGameId(gameId) {
   if (text.length <= 3) return "AA";
   if (text.length === 6) return "KK";
   return "未知";
+}
+
+function vendorClass(vendor) {
+  return `vendor-${String(vendor ?? "").trim().toLowerCase()}`;
 }
 
 function getMetric(key, list = METRICS) {
@@ -333,6 +477,7 @@ function changeClass(current, previous, reverse = false) {
 
 function populateSelect(selector, options, selectedValue) {
   const element = $(selector);
+  if (!element) return;
   element.innerHTML = options
     .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
     .join("");
@@ -381,6 +526,7 @@ function collectNewGameSummary(year = dashboardYear()) {
     for (const row of week.rows) {
       const key = row.游戏Key ?? gameKey(row.英文名称);
       const rank = rankOf(row);
+      const validRank = rank !== null && rank > 0 ? rank : null;
       const bet = toNumber(row.下注金额);
       if (!history.has(key)) {
         history.set(key, {
@@ -391,8 +537,8 @@ function collectNewGameSummary(year = dashboardYear()) {
           launchPeriod: week.period,
           launchStart: week.start,
           firstSeenYear: Number(String(week.start || "").slice(0, 4)),
-          bestRank: rank,
-          bestRankPeriod: rank !== null && rank > 0 ? week.period : "",
+          bestRank: validRank,
+          bestRankPeriod: validRank !== null ? week.period : "",
           bestBet: bet ?? null,
           bestBetPeriod: bet !== null ? week.period : "",
         });
@@ -400,8 +546,8 @@ function collectNewGameSummary(year = dashboardYear()) {
       const item = history.get(key);
       item.displayName = row.显示名称 || item.displayName;
       item.vendor = row.产商 || item.vendor;
-      if (rank !== null && rank > 0 && (item.bestRank === null || item.bestRank === undefined || rank < item.bestRank)) {
-        item.bestRank = rank;
+      if (validRank !== null && (item.bestRank === null || item.bestRank === undefined || validRank < item.bestRank)) {
+        item.bestRank = validRank;
         item.bestRankPeriod = week.period;
       }
       if (bet !== null && (item.bestBet === null || item.bestBet === undefined || bet > item.bestBet)) {
@@ -479,6 +625,84 @@ function rankDelta(row, previousIndex) {
   const previousRank = rankOf(previous);
   if (currentRank === null || previousRank === null) return null;
   return previousRank - currentRank;
+}
+
+function parseMappingCsv(text) {
+  const rows = parseCsvRows(text);
+  const mapping = {};
+  for (const row of rows.slice(1)) {
+    const english = String(row[0] ?? "").trim();
+    const display = String(row[1] ?? "").trim();
+    if (english && display) mapping[gameKey(english)] = display;
+  }
+  return mapping;
+}
+
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        cell += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => String(value).trim() !== "")) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  if (row.some((value) => String(value).trim() !== "")) rows.push(row);
+  return rows;
+}
+
+async function loadMappingCsv() {
+  const urls = [
+    `${GITHUB_RAW_BASE}/${MAPPING_CSV_PATH}?ts=${Date.now()}`,
+    `${MAPPING_CSV_PATH}?ts=${Date.now()}`,
+  ];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) continue;
+      const csvMapping = parseMappingCsv(await response.text());
+      state.data = normalizeWorkbookData({
+        ...state.data,
+        mapping: csvMapping,
+      });
+      saveStoredData();
+      renderAll();
+      return true;
+    } catch {
+      // Try the next mapping CSV source.
+    }
+  }
+  return false;
+}
+
+function rankChangeText(currentRank, previousRank) {
+  const current = toNumber(currentRank);
+  const previous = toNumber(previousRank);
+  if (current === null || current <= 0) return "-";
+  if (previous === null || previous <= 0) return "新上榜";
+  const delta = previous - current;
+  if (delta === 0) return "持平";
+  return `${delta > 0 ? "上升" : "下降"} ${Math.abs(delta)} 名`;
 }
 
 function generateWeeklySummary() {
@@ -585,8 +809,9 @@ function generateWeeklySummary() {
 }
 
 function renderGameOverview() {
-  const current = currentRows();
-  const previousIndex = indexByEnglish(previousRows());
+  const overview = overviewRowsByPeriod();
+  const current = overview.current;
+  const previousIndex = indexByEnglish(overview.previous);
   const search = state.gameSearch.trim().toLowerCase();
   let rows = topRows(current, state.overviewTopN);
   if (state.overviewVendor !== "全部") rows = rows.filter((row) => row.产商 === state.overviewVendor);
@@ -598,7 +823,7 @@ function renderGameOverview() {
   $("#gameOverviewTable").innerHTML = `
     <thead>
       <tr class="group-head">
-        <th rowspan="2">排名</th>
+        <th colspan="3">排名</th>
         <th rowspan="2">游戏</th>
         <th rowspan="2">产商</th>
         <th colspan="3">下注金额</th>
@@ -608,7 +833,8 @@ function renderGameOverview() {
         <th colspan="3">活跃玩家</th>
       </tr>
       <tr>
-        ${["本周", "上周", "变化"].map((label) => `<th>${label}</th>`).join("").repeat(5)}
+        ${[overview.currentLabel, overview.previousLabel, "变化"].map((label) => `<th>${label}</th>`).join("")}
+        ${[overview.currentLabel, overview.previousLabel, "变化"].map((label) => `<th>${label}</th>`).join("").repeat(5)}
       </tr>
     </thead>
     <tbody>
@@ -622,15 +848,19 @@ function renderGameOverview() {
             <td class="num ${changeClass(row[field], previous?.[field])}">${changeText(row[field], previous?.[field], type)}</td>
           `;
         }).join("");
+        const currentRank = rankOf(row);
+        const previousRank = rankOf(previous);
         return `
           <tr>
-            <td class="num">${formatNumber(rankOf(row), "people")}</td>
+            <td class="num">${formatNumber(currentRank, "people")}</td>
+            <td class="num">${formatNumber(previousRank, "people")}</td>
+            <td class="num ${changeClass(currentRank, previousRank, true)}">${rankChangeText(currentRank, previousRank)}</td>
             <td><span class="game-title">${escapeHtml(row.显示名称)}</span><span class="game-subtitle">${escapeHtml(row.英文名称)}</span></td>
-            <td><span class="pill teal">${escapeHtml(row.产商)}</span></td>
+            <td><span class="pill teal ${vendorClass(row.产商)}">${escapeHtml(row.产商)}</span></td>
             ${cells}
           </tr>
         `;
-      }).join("") || `<tr><td colspan="18" class="empty-state">没有符合条件的数据</td></tr>`}
+      }).join("") || `<tr><td colspan="20" class="empty-state">没有符合条件的数据</td></tr>`}
     </tbody>
   `;
 }
@@ -640,16 +870,28 @@ function renderVendorOverview() {
   const previous = topRows(previousRows(), state.vendorTopN);
   const currentTotals = vendorTotals(current);
   const previousTotals = vendorTotals(previous);
+  const currentRankTotals = vendorTotals(currentRows());
 
   $("#vendorMetricGrid").innerHTML = VENDORS.map((vendor) => {
     const cur = currentTotals[vendor];
     const prev = previousTotals[vendor];
     return `
-      <article class="metric-card">
-        <span>${vendor} 总下注金额</span>
-        <strong>${formatNumber(cur.bet)}</strong>
-        <em class="${deltaClass(cur.bet - prev.bet)}">较上周${formatReportDelta(cur.bet - prev.bet)}</em>
-      </article>
+      <section class="vendor-metric-column ${vendorClass(vendor)}">
+        <div class="vendor-metric-head">
+          <span>${vendor}</span>
+          <strong>产商汇总</strong>
+        </div>
+        <article class="metric-card">
+          <span>总下注金额</span>
+          <strong>${formatNumber(cur.bet)}</strong>
+          <em class="${deltaClass(cur.bet - prev.bet)}">较上周${formatReportDelta(cur.bet - prev.bet)}</em>
+        </article>
+        <article class="metric-card">
+          <span>总游戏输赢</span>
+          <strong>${formatNumber(cur.win)}</strong>
+          <em class="${deltaClass(cur.win - prev.win)}">较上周${formatReportDelta(cur.win - prev.win)}</em>
+        </article>
+      </section>
     `;
   }).join("");
 
@@ -662,6 +904,8 @@ function renderVendorOverview() {
         <th>前20</th>
         <th>前50</th>
         <th>总下注金额</th>
+        <th>变化</th>
+        <th>总游戏输赢</th>
         <th>变化</th>
         <th>总新增玩家</th>
         <th>变化</th>
@@ -676,13 +920,15 @@ function renderVendorOverview() {
         const prev = previousTotals[vendor];
         return `
           <tr>
-            <td><span class="pill teal">${vendor}</span></td>
+            <td><span class="pill teal ${vendorClass(vendor)}">${vendor}</span></td>
             <td class="num">${formatNumber(cur.count, "people")}</td>
-            <td class="num">${formatNumber(cur.top10, "people")}</td>
-            <td class="num">${formatNumber(cur.top20, "people")}</td>
-            <td class="num">${formatNumber(cur.top50, "people")}</td>
+            <td class="num">${formatNumber(currentRankTotals[vendor].top10, "people")}</td>
+            <td class="num">${formatNumber(currentRankTotals[vendor].top20, "people")}</td>
+            <td class="num">${formatNumber(currentRankTotals[vendor].top50, "people")}</td>
             <td class="num">${formatNumber(cur.bet)}</td>
             <td class="num ${deltaClass(cur.bet - prev.bet)}">${formatReportDelta(cur.bet - prev.bet)}</td>
+            <td class="num">${formatNumber(cur.win)}</td>
+            <td class="num ${deltaClass(cur.win - prev.win)}">${formatReportDelta(cur.win - prev.win)}</td>
             <td class="num">${formatNumber(cur.newPlayers, "people")}</td>
             <td class="num ${deltaClass(cur.newPlayers - prev.newPlayers)}">${formatReportDelta(cur.newPlayers - prev.newPlayers, "people")}</td>
             <td class="num">${formatNumber(cur.activePlayers, "people")}</td>
@@ -696,12 +942,12 @@ function renderVendorOverview() {
 
   const previousIndex = indexByEnglish(previousRows());
   $("#vendorRankLists").innerHTML = VENDORS.map((vendor) => {
-    const vendorRows = sortedByRank(topRows(currentRows(), "50").filter((row) => row.产商 === vendor)).slice(0, 12);
+    const allVendorRows = sortedByRank(topRows(currentRows(), state.vendorTopN).filter((row) => row.产商 === vendor));
     return `
-      <section class="vendor-list">
-        <h3>${vendor} 上榜游戏</h3>
+      <section class="vendor-list ${vendorClass(vendor)}">
+        <h3>${vendor} 上榜游戏 <span>${formatNumber(allVendorRows.length, "people")} 款</span></h3>
         <ol>
-          ${vendorRows.map((row) => {
+          ${allVendorRows.map((row) => {
             const previous = previousIndex.get(row.游戏Key ?? gameKey(row.英文名称));
             return `<li><span>${escapeHtml(row.显示名称)}</span><strong class="${changeClass(rankOf(row), rankOf(previous), true)}">#${formatNumber(rankOf(row), "people")} / 上周 #${formatNumber(rankOf(previous), "people")}</strong></li>`;
           }).join("") || `<li><span>暂无数据</span><strong>-</strong></li>`}
@@ -717,7 +963,7 @@ function renderNewGameSummary() {
   if (yearLabel) yearLabel.textContent = `统计年度：${summary.year}`;
 
   $("#newGameMetricGrid").innerHTML = NEW_GAME_VENDOR_ORDER.map((vendor) => `
-    <article class="metric-card">
+    <article class="metric-card ${vendorClass(vendor)}">
       <span>${vendor} 今年上新款数</span>
       <strong>${formatNumber(summary.counts[vendor], "people")}</strong>
       <em>${summary.year} 年累计</em>
@@ -953,8 +1199,8 @@ function renderVendorBetPie(weeks) {
   stats.innerHTML = data.map((item, index) => {
     const share = item.value / total;
     return `
-      <div class="stat-row">
-        <span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${colors[index % colors.length]};margin-right:6px"></i>${item.vendor}</span>
+      <div class="stat-row ${vendorClass(item.vendor)}">
+        <span class="vendor-stat-label ${vendorClass(item.vendor)}"><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${colors[index % colors.length]};margin-right:6px"></i>${item.vendor}</span>
         <strong>${formatNumber(item.value)}</strong>
         <small>占比 ${(share * 100).toFixed(1)}%</small>
       </div>
@@ -973,8 +1219,8 @@ function renderTrendStats(selector, points, metric, seriesList = []) {
       const latest = series.points.at(-1);
       if (!latest) return "";
       return `
-        <div class="stat-row">
-          <span>${escapeHtml(series.name)} 最新值</span>
+        <div class="stat-row ${vendorClass(series.name)}">
+          <span class="vendor-stat-label ${vendorClass(series.name)}">${escapeHtml(series.name)} 最新值</span>
           <strong>${formatNumber(latest.value, metric.type)}</strong>
           <small>${periodLabel(latest.period)}</small>
         </div>
@@ -1033,7 +1279,7 @@ function renderVendorTrendTable(seriesList, metric) {
     <tbody>
       ${rows.map((point) => `
         <tr>
-          <td><span class="pill teal">${escapeHtml(point.seriesName)}</span></td>
+          <td><span class="pill teal ${vendorClass(point.seriesName)}">${escapeHtml(point.seriesName)}</span></td>
           <td>${periodLabel(point.period)}</td>
           <td class="num">${formatNumber(point.value, metric.type)}</td>
           <td class="num">${formatNumber(point.row.count, "people")}</td>
@@ -1046,119 +1292,6 @@ function renderVendorTrendTable(seriesList, metric) {
       `).join("")}
     </tbody>
   `;
-}
-
-function mappingEntries() {
-  const mapping = normalizeMapping(state.data.mapping ?? {});
-  const games = getAllGames();
-  const gameIndex = new Map(games.map((game) => [game.游戏Key ?? gameKey(game.英文名称), game]));
-  const keys = [...new Set([...Object.keys(mapping), ...games.map((game) => game.游戏Key ?? gameKey(game.英文名称))])];
-  return keys.map((key) => {
-    const game = gameIndex.get(key);
-    const english = game?.英文名称 || key;
-    const chinese = mapping[key] || "";
-    const rank = rankOf(indexByEnglish(currentRows()).get(key));
-    return { key, english, chinese, rank };
-  }).sort((a, b) => {
-    const rankA = a.rank ?? 999999;
-    const rankB = b.rank ?? 999999;
-    if (rankA !== rankB) return rankA - rankB;
-    return a.english.localeCompare(b.english, "en");
-  });
-}
-
-function renderMappingManager() {
-  const entries = mappingEntries();
-  const query = state.mappingSearch.trim().toLowerCase();
-  const rows = entries.filter((entry) => {
-    if (!query) return true;
-    return `${entry.english} ${entry.chinese}`.toLowerCase().includes(query);
-  });
-  $("#mappingCount").textContent = `共 ${entries.length} 条`;
-  $("#mappingSearch").value = state.mappingSearch;
-  $("#mappingTable").innerHTML = `
-    <thead>
-      <tr>
-        <th>本周排名</th>
-        <th>英文名</th>
-        <th>中文映射</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rows.map((entry) => `
-        <tr>
-          <td class="num">${entry.rank ? `#${formatNumber(entry.rank, "people")}` : "-"}</td>
-          <td>${escapeHtml(entry.english)}</td>
-          <td>${escapeHtml(entry.chinese || "-")}</td>
-          <td><button class="ghost-button mapping-edit-button" type="button" data-key="${escapeHtml(entry.key)}" data-english="${escapeHtml(entry.english)}" data-chinese="${escapeHtml(entry.chinese)}">编辑</button></td>
-        </tr>
-      `).join("") || `<tr><td colspan="4" class="empty-state">没有符合条件的映射</td></tr>`}
-    </tbody>
-  `;
-}
-
-function saveMappingEntry() {
-  if (!requireAdminMode("保存映射")) return;
-  const english = $("#mappingEnglish").value.trim();
-  const chinese = $("#mappingChinese").value.trim();
-  if (!english || !chinese) {
-    alert("请先填写英文游戏名和中文显示名。");
-    return;
-  }
-  const nextMapping = {
-    ...normalizeMapping(state.data.mapping ?? {}),
-    [gameKey(english)]: chinese,
-  };
-  state.data = normalizeWorkbookData({
-    ...state.data,
-    mapping: nextMapping,
-  });
-  saveStoredData();
-  $("#mappingEnglish").value = english;
-  $("#mappingChinese").value = chinese;
-  renderAll();
-}
-
-async function saveGlobalMappingEntry() {
-  if (!requireAdminMode("发布映射")) return;
-  const english = $("#mappingEnglish").value.trim();
-  const chinese = $("#mappingChinese").value.trim();
-  const token = currentGithubToken();
-  if (!english || !chinese) {
-    alert("请先填写英文游戏名和中文显示名。");
-    return;
-  }
-  if (!token) {
-    alert("请先输入 GitHub Token。");
-    return;
-  }
-
-  saveSessionToken(token);
-  const nextMapping = {
-    ...normalizeMapping(state.data.mapping ?? {}),
-    [gameKey(english)]: chinese,
-  };
-
-  const contentUrl = `https://api.github.com/repos/${GITHUB_SYNC.owner}/${GITHUB_SYNC.repo}/contents/${GITHUB_SYNC.path}`;
-  const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha) => ({
-    message: `Update shared mapping: ${english}`,
-    content: encodeBase64Utf8(JSON.stringify(nextMapping, null, 2) + "\n"),
-    sha,
-    branch: GITHUB_SYNC.branch,
-  }));
-  if (!updateResult.ok) {
-    alert(`保存到 GitHub 失败：${updateResult.status}\n${updateResult.text}`);
-    return;
-  }
-
-  state.data = normalizeWorkbookData({
-    ...state.data,
-    mapping: nextMapping,
-  });
-  saveStoredData();
-  renderAll();
-  alert("已保存到 GitHub。等 GitHub Pages 更新后，其他访问者刷新页面即可看到新映射。");
 }
 
 async function publishSharedDashboard(customMessage = "") {
@@ -1188,34 +1321,26 @@ async function publishSharedDashboard(customMessage = "") {
 }
 
 async function loadSharedMapping() {
-  try {
-    const response = await fetch(`data/shared-mapping.json?ts=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) return;
-    const sharedMapping = normalizeMapping(await response.json());
-    state.data = normalizeWorkbookData({
-      ...state.data,
-      mapping: {
-        ...normalizeMapping(state.data.mapping ?? {}),
-        ...sharedMapping,
-      },
-    });
-    saveStoredData();
-    renderAll();
-  } catch {
-    // Shared mapping load failure should not block the page.
-  }
+  await loadMappingCsv();
 }
 
 async function loadSharedDashboard() {
-  try {
-    const response = await fetch(`data/shared-dashboard.json?ts=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) return;
-    const sharedDashboard = normalizeWorkbookData(await response.json());
-    state.data = sharedDashboard;
-    saveStoredData();
-    renderAll();
-  } catch {
-    // Shared dashboard load failure should not block the page.
+  const urls = [
+    `${GITHUB_RAW_BASE}/${GITHUB_DASHBOARD_SYNC.path}?ts=${Date.now()}`,
+    `data/shared-dashboard.json?ts=${Date.now()}`,
+  ];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) continue;
+      const sharedDashboard = normalizeWorkbookData(await response.json());
+      state.data = sharedDashboard;
+      saveStoredData();
+      renderAll();
+      return;
+    } catch {
+      // Try the next shared dashboard source.
+    }
   }
 }
 
@@ -1235,15 +1360,9 @@ function renderAdminMode() {
   const adminPanel = $("#adminPanel");
   const adminHint = $("#adminModeHint");
   const adminToggle = $("#adminModeToggle");
-  const readOnlyNotice = $("#mappingReadOnlyNotice");
-  const editorCard = $("#mappingEditorCard");
   const controls = [
     $("#globalGithubToken"),
     $("#fileInput"),
-    $("#mappingEnglish"),
-    $("#mappingChinese"),
-    $("#saveMappingButton"),
-    $("#saveGlobalMappingButton"),
     $("#publishDashboardButton"),
   ].filter(Boolean);
 
@@ -1251,13 +1370,6 @@ function renderAdminMode() {
   if (adminPanel) adminPanel.classList.toggle("is-open", state.adminMode);
   if (adminHint) adminHint.textContent = state.adminMode ? "当前为管理员模式" : "当前为只读模式";
   if (adminToggle) adminToggle.textContent = state.adminMode ? "退出管理员模式" : "进入管理员模式";
-  if (readOnlyNotice) {
-    readOnlyNotice.classList.toggle("is-hidden", state.adminAvailable && state.adminMode);
-    readOnlyNotice.textContent = state.adminAvailable
-      ? "当前为只读模式。进入管理员模式后，才可新增映射、上传周数据并发布到 GitHub。"
-      : "管理员功能仅在本机访问时开放，服务器访问仅提供查看能力。";
-  }
-  if (editorCard) editorCard.classList.toggle("is-hidden", !state.adminAvailable || !state.adminMode);
   controls.forEach((element) => {
     element.disabled = !state.adminAvailable || !state.adminMode;
   });
@@ -1292,24 +1404,37 @@ function renderAll() {
   renderNewGameSummary();
   renderGameTrend();
   renderVendorTrend();
-  renderMappingManager();
 }
 
 function populateControls() {
+  populateSelect("#overviewPeriod", OVERVIEW_PERIOD_OPTIONS, state.overviewPeriod);
+  populateSelect("#overviewComparePeriod", OVERVIEW_COMPARE_PERIOD_OPTIONS, state.overviewComparePeriod);
   populateSelect("#overviewVendor", [{ label: "全部", value: "全部" }, ...VENDORS.map((vendor) => ({ label: vendor, value: vendor }))], state.overviewVendor);
   populateSelect("#overviewTopN", TOP_OPTIONS, state.overviewTopN);
   populateSelect("#vendorTopN", TOP_OPTIONS, state.vendorTopN);
   populateSelect("#trendGamePeriod", PERIOD_OPTIONS, state.trendGamePeriod);
   populateSelect("#trendVendorPeriod", PERIOD_OPTIONS, state.trendVendorPeriod);
   const weekOptions = chronologicalWeeks().map((week) => ({ label: periodLabel(week.period), value: week.period }));
+  if (!state.overviewStart && weekOptions.length) state.overviewStart = weekOptions[Math.max(0, weekOptions.length - 4)].value;
+  if (!state.overviewEnd && weekOptions.length) state.overviewEnd = weekOptions.at(-1).value;
+  if (!state.overviewCompareStart && weekOptions.length) state.overviewCompareStart = weekOptions[Math.max(0, weekOptions.length - 8)].value;
+  if (!state.overviewCompareEnd && weekOptions.length) state.overviewCompareEnd = weekOptions[Math.max(0, weekOptions.length - 5)].value;
   if (!state.trendGameStart && weekOptions.length) state.trendGameStart = weekOptions[Math.max(0, weekOptions.length - 12)].value;
   if (!state.trendGameEnd && weekOptions.length) state.trendGameEnd = weekOptions.at(-1).value;
   if (!state.trendVendorStart && weekOptions.length) state.trendVendorStart = weekOptions[Math.max(0, weekOptions.length - 12)].value;
   if (!state.trendVendorEnd && weekOptions.length) state.trendVendorEnd = weekOptions.at(-1).value;
+  populateSelect("#overviewStart", weekOptions, state.overviewStart);
+  populateSelect("#overviewEnd", weekOptions, state.overviewEnd);
+  populateSelect("#overviewCompareStart", weekOptions, state.overviewCompareStart);
+  populateSelect("#overviewCompareEnd", weekOptions, state.overviewCompareEnd);
   populateSelect("#trendGameStart", weekOptions, state.trendGameStart);
   populateSelect("#trendGameEnd", weekOptions, state.trendGameEnd);
   populateSelect("#trendVendorStart", weekOptions, state.trendVendorStart);
   populateSelect("#trendVendorEnd", weekOptions, state.trendVendorEnd);
+  $("#overviewStartWrap").classList.toggle("is-visible", state.overviewPeriod === "custom");
+  $("#overviewEndWrap").classList.toggle("is-visible", state.overviewPeriod === "custom");
+  $("#overviewCompareStartWrap").classList.toggle("is-visible", state.overviewComparePeriod === "custom");
+  $("#overviewCompareEndWrap").classList.toggle("is-visible", state.overviewComparePeriod === "custom");
   $("#gameStartWrap").classList.toggle("is-visible", state.trendGamePeriod === "custom");
   $("#gameEndWrap").classList.toggle("is-visible", state.trendGamePeriod === "custom");
   $("#vendorStartWrap").classList.toggle("is-visible", state.trendVendorPeriod === "custom");
@@ -1354,6 +1479,10 @@ function wireEvents() {
   });
 
   const bindings = [
+    ["#overviewStart", "overviewStart", renderGameOverview],
+    ["#overviewEnd", "overviewEnd", renderGameOverview],
+    ["#overviewCompareStart", "overviewCompareStart", renderGameOverview],
+    ["#overviewCompareEnd", "overviewCompareEnd", renderGameOverview],
     ["#overviewVendor", "overviewVendor", renderGameOverview],
     ["#overviewTopN", "overviewTopN", renderGameOverview],
     ["#vendorTopN", "vendorTopN", renderVendorOverview],
@@ -1377,6 +1506,17 @@ function wireEvents() {
       render();
     });
   }
+  $("#overviewPeriod").addEventListener("change", (event) => {
+    state.overviewPeriod = event.target.value;
+    state.overviewComparePeriod = state.overviewPeriod === "custom" ? "week" : state.overviewPeriod;
+    populateControls();
+    renderGameOverview();
+  });
+  $("#overviewComparePeriod").addEventListener("change", (event) => {
+    state.overviewComparePeriod = event.target.value;
+    populateControls();
+    renderGameOverview();
+  });
   $("#gameSearch").addEventListener("input", (event) => {
     state.gameSearch = event.target.value;
     renderGameOverview();
@@ -1384,23 +1524,13 @@ function wireEvents() {
   $("#trendGameSearch").addEventListener("input", (event) => {
     state.trendGameSearch = event.target.value;
     populateControls();
-  });
-  $("#mappingSearch").addEventListener("input", (event) => {
-    state.mappingSearch = event.target.value;
-    renderMappingManager();
-  });
+  });
   $("#adminModeToggle").addEventListener("click", () => {
     if (!state.adminAvailable) return;
     state.adminMode = !state.adminMode;
     saveAdminMode(state.adminMode);
     renderAdminMode();
-  });
-  $("#saveMappingButton").addEventListener("click", saveMappingEntry);
-  $("#saveGlobalMappingButton").addEventListener("click", () => {
-    saveGlobalMappingEntry().catch((error) => {
-      alert(`保存到 GitHub 失败：${error.message}`);
-    });
-  });
+  });
   $("#publishDashboardButton").addEventListener("click", () => {
     publishSharedDashboard().catch((error) => {
       alert(`发布共享数据失败：${error.message}`);
@@ -1422,13 +1552,7 @@ function wireEvents() {
   });
   $("#globalGithubToken").addEventListener("input", (event) => {
     saveSessionToken(event.target.value);
-  });
-  $("#mappingTable").addEventListener("click", (event) => {
-    const button = event.target.closest(".mapping-edit-button");
-    if (!button || !state.adminMode) return;
-    $("#mappingEnglish").value = button.dataset.english || "";
-    $("#mappingChinese").value = button.dataset.chinese || "";
-  });
+  });
   $("#copySummaryButton").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("#weeklySummary").textContent);
     $("#copySummaryButton").textContent = "已复制";
