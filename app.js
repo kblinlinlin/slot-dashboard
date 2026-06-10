@@ -1333,7 +1333,14 @@ async function loadSharedDashboard() {
     try {
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) continue;
-      const sharedDashboard = normalizeWorkbookData(await response.json());
+      const remoteData = await response.json();
+      const sharedDashboard = normalizeWorkbookData({
+        ...remoteData,
+        mapping: {
+          ...(remoteData.mapping ?? {}),
+          ...(state.data?.mapping ?? {}),
+        },
+      });
       state.data = sharedDashboard;
       saveStoredData();
       renderAll();
@@ -1342,6 +1349,11 @@ async function loadSharedDashboard() {
       // Try the next shared dashboard source.
     }
   }
+}
+
+async function initializeRemoteData() {
+  await loadSharedDashboard();
+  await loadSharedMapping();
 }
 
 function renderSharedStatus() {
@@ -1765,5 +1777,4 @@ function appendSingleWeek(data, week, sourceFile) {
 
 wireEvents();
 renderAll();
-loadSharedDashboard();
-loadSharedMapping();
+initializeRemoteData();
