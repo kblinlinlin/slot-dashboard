@@ -151,7 +151,10 @@
 
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script>
+      window.__xlsxReady = Promise.resolve();
+    </script>
     <script src="data/initial-data.js"></script>
     <script src="app.js"></script>
   </body>

@@ -99,6 +99,21 @@ let state = {
 
 const $ = (selector) => document.querySelector(selector);
 
+function bindEvent(selector, eventName, handler) {
+  const element = $(selector);
+  if (element) element.addEventListener(eventName, handler);
+}
+
+function setVisible(selector, visible) {
+  const element = $(selector);
+  if (element) element.classList.toggle("is-visible", visible);
+}
+
+function setInputValue(selector, value) {
+  const element = $(selector);
+  if (element) element.value = value;
+}
+
 function loadStoredData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1443,14 +1458,14 @@ function populateControls() {
   populateSelect("#trendGameEnd", weekOptions, state.trendGameEnd);
   populateSelect("#trendVendorStart", weekOptions, state.trendVendorStart);
   populateSelect("#trendVendorEnd", weekOptions, state.trendVendorEnd);
-  $("#overviewStartWrap").classList.toggle("is-visible", state.overviewPeriod === "custom");
-  $("#overviewEndWrap").classList.toggle("is-visible", state.overviewPeriod === "custom");
-  $("#overviewCompareStartWrap").classList.toggle("is-visible", state.overviewComparePeriod === "custom");
-  $("#overviewCompareEndWrap").classList.toggle("is-visible", state.overviewComparePeriod === "custom");
-  $("#gameStartWrap").classList.toggle("is-visible", state.trendGamePeriod === "custom");
-  $("#gameEndWrap").classList.toggle("is-visible", state.trendGamePeriod === "custom");
-  $("#vendorStartWrap").classList.toggle("is-visible", state.trendVendorPeriod === "custom");
-  $("#vendorEndWrap").classList.toggle("is-visible", state.trendVendorPeriod === "custom");
+  setVisible("#overviewStartWrap", state.overviewPeriod === "custom");
+  setVisible("#overviewEndWrap", state.overviewPeriod === "custom");
+  setVisible("#overviewCompareStartWrap", state.overviewComparePeriod === "custom");
+  setVisible("#overviewCompareEndWrap", state.overviewComparePeriod === "custom");
+  setVisible("#gameStartWrap", state.trendGamePeriod === "custom");
+  setVisible("#gameEndWrap", state.trendGamePeriod === "custom");
+  setVisible("#vendorStartWrap", state.trendVendorPeriod === "custom");
+  setVisible("#vendorEndWrap", state.trendVendorPeriod === "custom");
   populateSelect("#trendVendorTopN", TOP_OPTIONS, state.trendVendorTopN);
   populateSelect("#trendGameMetric", METRICS.map((metric) => ({ label: metric.label, value: metric.key })), state.trendGameMetric);
   if (!state.trendVendors.length) state.trendVendors = ["AA"];
@@ -1477,8 +1492,8 @@ function populateControls() {
     const rankLabel = rank ? `#${formatNumber(rank, "people")} ` : "";
     return { label: `${rankLabel}${game.显示名称} (${game.英文名称})`, value: key };
   }), state.trendGames);
-  $("#trendGameSearch").value = state.trendGameSearch;
-  $("#gameSearch").value = state.gameSearch;
+  setInputValue("#trendGameSearch", state.trendGameSearch);
+  setInputValue("#gameSearch", state.gameSearch);
 }
 
 function wireEvents() {
@@ -1511,44 +1526,44 @@ function wireEvents() {
     ["#trendVendorMetric", "trendVendorMetric", renderVendorTrend],
   ];
   for (const [selector, key, render] of bindings) {
-    $(selector).addEventListener("change", (event) => {
+    bindEvent(selector, "change", (event) => {
       state[key] = event.target.multiple
         ? [...event.target.selectedOptions].map((option) => option.value)
         : event.target.value;
       render();
     });
   }
-  $("#overviewPeriod").addEventListener("change", (event) => {
+  bindEvent("#overviewPeriod", "change", (event) => {
     state.overviewPeriod = event.target.value;
     state.overviewComparePeriod = state.overviewPeriod === "custom" ? "week" : state.overviewPeriod;
     populateControls();
     renderGameOverview();
   });
-  $("#overviewComparePeriod").addEventListener("change", (event) => {
+  bindEvent("#overviewComparePeriod", "change", (event) => {
     state.overviewComparePeriod = event.target.value;
     populateControls();
     renderGameOverview();
   });
-  $("#gameSearch").addEventListener("input", (event) => {
+  bindEvent("#gameSearch", "input", (event) => {
     state.gameSearch = event.target.value;
     renderGameOverview();
   });
-  $("#trendGameSearch").addEventListener("input", (event) => {
+  bindEvent("#trendGameSearch", "input", (event) => {
     state.trendGameSearch = event.target.value;
     populateControls();
-  });
-  $("#adminModeToggle").addEventListener("click", () => {
+  });
+  bindEvent("#adminModeToggle", "click", () => {
     if (!state.adminAvailable) return;
     state.adminMode = !state.adminMode;
     saveAdminMode(state.adminMode);
     renderAdminMode();
-  });
-  $("#publishDashboardButton").addEventListener("click", () => {
+  });
+  bindEvent("#publishDashboardButton", "click", () => {
     publishSharedDashboard().catch((error) => {
       alert(`发布共享数据失败：${error.message}`);
     });
   });
-  $("#reloadSharedButton").addEventListener("click", async (event) => {
+  bindEvent("#reloadSharedButton", "click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
     const originalText = button.textContent;
@@ -1562,15 +1577,15 @@ function wireEvents() {
       button.textContent = originalText;
     }
   });
-  $("#globalGithubToken").addEventListener("input", (event) => {
+  bindEvent("#globalGithubToken", "input", (event) => {
     saveSessionToken(event.target.value);
-  });
-  $("#copySummaryButton").addEventListener("click", async () => {
+  });
+  bindEvent("#copySummaryButton", "click", async () => {
     await navigator.clipboard.writeText($("#weeklySummary").textContent);
     $("#copySummaryButton").textContent = "已复制";
     setTimeout(() => ($("#copySummaryButton").textContent = "复制总结"), 1200);
   });
-  $("#fileInput").addEventListener("change", handleFileUpload);
+  bindEvent("#fileInput", "change", handleFileUpload);
 }
 
 async function handleFileUpload(event) {
@@ -1775,6 +1790,27 @@ function appendSingleWeek(data, week, sourceFile) {
   });
 }
 
-wireEvents();
-renderAll();
-initializeRemoteData();
+async function startDashboard() {
+  wireEvents();
+  await window.__xlsxReady;
+  renderAll();
+  await initializeRemoteData().catch((error) => {
+    console.error(error);
+    const report = $("#weeklySummary");
+    if (report) report.textContent = `远程共享数据加载失败：${error.message}`;
+  });
+}
+
+try {
+  startDashboard().catch((error) => {
+    console.error(error);
+    const report = $("#weeklySummary");
+    if (report) report.textContent = `页面初始化失败：${error.message}`;
+    renderAdminMode();
+  });
+} catch (error) {
+  console.error(error);
+  const report = $("#weeklySummary");
+  if (report) report.textContent = `页面初始化失败：${error.message}`;
+  renderAdminMode();
+}
