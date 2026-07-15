@@ -182,6 +182,10 @@ function encodeBase64Utf8(text) {
   return btoa(unescape(encodeURIComponent(text)));
 }
 
+function decodeBase64Utf8(text) {
+  return decodeURIComponent(escape(atob(String(text ?? "").replace(/\s/g, ""))));
+}
+
 async function fetchGitHubContent(url, token) {
   const response = await fetch(url, {
     headers: {
@@ -200,7 +204,7 @@ async function putGitHubContentWithRetry(url, token, buildPayload, maxAttempts =
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const currentFile = await fetchGitHubContent(url, token);
     if (!currentFile.ok) return currentFile;
-    const payload = buildPayload(currentFile.json.sha);
+    const payload = buildPayload(currentFile.json.sha, currentFile.json);
     const updateResponse = await fetch(url, {
       method: "PUT",
       headers: {
@@ -218,6 +222,34 @@ async function putGitHubContentWithRetry(url, token, buildPayload, maxAttempts =
     if (updateResponse.status !== 409) break;
   }
   return lastFailure ?? { ok: false, status: 500, text: "Unknown GitHub update failure" };
+}
+
+function parseGitHubJsonContent(file) {
+  try {
+    return JSON.parse(decodeBase64Utf8(file?.content));
+  } catch {
+    return null;
+  }
+}
+
+function mergeDashboardHistory(localData, remoteData) {
+  const weeksByPeriod = new Map();
+  for (const week of remoteData?.weeks ?? []) {
+    if (week?.period) weeksByPeriod.set(week.period, week);
+  }
+  for (const week of localData?.weeks ?? []) {
+    if (week?.period) weeksByPeriod.set(week.period, week);
+  }
+  const weeks = [...weeksByPeriod.values()].sort((a, b) => b.period.localeCompare(a.period));
+  return normalizeWorkbookData({
+    ...remoteData,
+    ...localData,
+    mapping: {
+      ...(remoteData?.mapping ?? {}),
+      ...(localData?.mapping ?? {}),
+    },
+    weeks,
+  });
 }
 
 function escapeHtml(value) {
@@ -1322,12 +1354,16 @@ async function publishSharedDashboard(customMessage = "") {
     ...state.data,
     generatedAt: new Date().toISOString(),
   });
-  const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha) => ({
-    message: customMessage || `Sync dashboard data ${dashboardData.currentWeek?.period || ""}`,
-    content: encodeBase64Utf8(JSON.stringify(dashboardData, null, 2) + "\n"),
-    sha,
-    branch: GITHUB_DASHBOARD_SYNC.branch,
-  }));
+  const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha, currentFile) => {
+    const remoteDashboard = parseGitHubJsonContent(currentFile);
+    const publishData = remoteDashboard ? mergeDashboardHistory(dashboardData, remoteDashboard) : dashboardData;
+    return {
+      message: customMessage || `Sync dashboard data ${publishData.currentWeek?.period || ""}`,
+      content: encodeBase64Utf8(JSON.stringify(publishData, null, 2) + "\n"),
+      sha,
+      branch: GITHUB_DASHBOARD_SYNC.branch,
+    };
+  });
   if (!updateResult.ok) {
     alert(`发布共享数据失败：${updateResult.status}\n${updateResult.text}`);
     return;
