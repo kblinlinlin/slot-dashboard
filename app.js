@@ -1673,8 +1673,9 @@ function sheetRows(workbook, sheetName) {
   return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null });
 }
 
-function rowsToWeek(rawRows, sheetName, sourceFile, mapping = state.data?.mapping ?? {}) {
+function rowsToWeek(rawRows, sheetName, sourceFile, mapping = state.data?.mapping ?? {}, periodOverride = "") {
   if (!rawRows.length) return null;
+  const resolvedPeriod = normalizePeriod(periodOverride || "");
   const headers = rawRows[0].map((item) => String(item ?? "").trim().replace(/^\ufeff/, ""));
   const rows = rawRows.slice(1).filter((row) => row[0] && row[1]).map((row) => {
     const item = {};
@@ -1686,13 +1687,13 @@ function rowsToWeek(rawRows, sheetName, sourceFile, mapping = state.data?.mappin
     item.游戏Key = gameKey(english);
     item.显示名称 = normalizeMapping(mapping)[item.游戏Key] || english;
     item.产商 = vendorFromGameId(item.游戏ID);
-    item.日期 = normalizePeriod(item.日期 || periodFromFilename(sourceFile) || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
+    item.日期 = resolvedPeriod || normalizePeriod(item.日期 || periodFromFilename(sourceFile) || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
     item.排名 = item.下注金额排名变化;
     return item;
   }).filter((row) => !isExcludedGame(row));
 
   if (!rows.length) return null;
-  const period = normalizePeriod(rows[0]?.日期 || periodFromFilename(sourceFile) || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
+  const period = resolvedPeriod || normalizePeriod(rows[0]?.日期 || periodFromFilename(sourceFile) || sheetName || sourceFile.replace(/\.[^.]+$/, ""));
   const [start = period, end = period] = period.split("_");
   return {
     sheetName,
@@ -1725,7 +1726,7 @@ function parseCsvFile(buffer, sourceFile) {
   const text = decodeCsvBuffer(buffer);
   const workbook = XLSX.read(text, { type: "string", raw: true });
   const sheetName = workbook.SheetNames[0];
-  const week = rowsToWeek(sheetRows(workbook, sheetName), sheetName, sourceFile);
+  const week = rowsToWeek(sheetRows(workbook, sheetName), sheetName, sourceFile, state.data?.mapping ?? {}, periodFromFilename(sourceFile));
   if (!week) throw new Error("CSV 未识别到可追加的单周数据");
   return { kind: "single-week", week };
 }
@@ -1771,7 +1772,9 @@ function parseWorkbook(workbook, sourceFile) {
   }
 
   const candidateSheet = workbook.SheetNames.find((name) => sheetRows(workbook, name).length > 1);
-  const week = candidateSheet ? rowsToWeek(sheetRows(workbook, candidateSheet), candidateSheet, sourceFile, displayMapping) : null;
+  const week = candidateSheet
+    ? rowsToWeek(sheetRows(workbook, candidateSheet), candidateSheet, sourceFile, displayMapping, periodFromFilename(sourceFile))
+    : null;
   if (!week) {
     throw new Error("未识别到可追加的单周数据");
   }
