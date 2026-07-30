@@ -876,19 +876,20 @@ function renderGameOverview() {
         <th colspan="3">下注金额</th>
         <th colspan="3">游戏输赢</th>
         <th colspan="3">投注次数</th>
+        <th colspan="3">中奖RTP</th>
         <th colspan="3">新增玩家</th>
         <th colspan="3">活跃玩家</th>
       </tr>
       <tr>
         ${[overview.currentLabel, overview.previousLabel, "变化"].map((label) => `<th>${label}</th>`).join("")}
-        ${[overview.currentLabel, overview.previousLabel, "变化"].map((label) => `<th>${label}</th>`).join("").repeat(5)}
+        ${[overview.currentLabel, overview.previousLabel, "变化"].map((label) => `<th>${label}</th>`).join("").repeat(6)}
       </tr>
     </thead>
     <tbody>
       ${rows.map((row) => {
         const previous = previousIndex.get(row.游戏Key ?? gameKey(row.英文名称));
-        const cells = ["下注金额", "游戏输赢", "投注次数", "新增玩家", "活跃玩家"].map((field) => {
-          const type = field.includes("玩家") ? "people" : "amount";
+        const cells = ["下注金额", "游戏输赢", "投注次数", "中奖RTP", "新增玩家", "活跃玩家"].map((field) => {
+          const type = field === "中奖RTP" ? "rate" : field.includes("玩家") ? "people" : "amount";
           return `
             <td class="num">${formatNumber(row[field], type)}</td>
             <td class="num">${formatNumber(previous?.[field], type)}</td>
@@ -907,7 +908,7 @@ function renderGameOverview() {
             ${cells}
           </tr>
         `;
-      }).join("") || `<tr><td colspan="20" class="empty-state">没有符合条件的数据</td></tr>`}
+      }).join("") || `<tr><td colspan="23" class="empty-state">没有符合条件的数据</td></tr>`}
     </tbody>
   `;
 }
