@@ -75,7 +75,10 @@
           <label>范围<select id="overviewTopN"></select></label>
           <label class="search-field">游戏搜索<input id="gameSearch" type="search" placeholder="输入中文或英文名" /></label>
         </div>
-        <div class="table-shell">
+        <div class="table-scroll-top" id="gameOverviewTopScroll" aria-label="游戏总览横向滚动">
+          <div class="table-scroll-spacer"></div>
+        </div>
+        <div class="table-shell" id="gameOverviewTableShell">
           <table class="data-table" id="gameOverviewTable"></table>
         </div>
       </section>

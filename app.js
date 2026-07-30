@@ -462,6 +462,23 @@ function sortedByRank(rows) {
   return [...rows].sort((a, b) => (rankOf(a) ?? 99999) - (rankOf(b) ?? 99999));
 }
 
+function syncTableScroll(topSelector, shellSelector, tableSelector) {
+  const topScroll = $(topSelector);
+  const tableShell = $(shellSelector);
+  const table = $(tableSelector);
+  const spacer = topScroll?.querySelector(".table-scroll-spacer");
+  if (!topScroll || !tableShell || !table || !spacer) return;
+
+  spacer.style.width = String(table.scrollWidth) + "px";
+  topScroll.hidden = table.scrollWidth <= tableShell.clientWidth;
+  topScroll.onscroll = () => {
+    tableShell.scrollLeft = topScroll.scrollLeft;
+  };
+  tableShell.onscroll = () => {
+    topScroll.scrollLeft = tableShell.scrollLeft;
+  };
+}
+
 function indexByEnglish(rows) {
   return new Map(rows.map((row) => [row.游戏Key ?? gameKey(row.英文名称), row]));
 }
@@ -911,6 +928,7 @@ function renderGameOverview() {
       }).join("") || `<tr><td colspan="23" class="empty-state">没有符合条件的数据</td></tr>`}
     </tbody>
   `;
+  syncTableScroll("#gameOverviewTopScroll", "#gameOverviewTableShell", "#gameOverviewTable");
 }
 
 function renderVendorOverview() {

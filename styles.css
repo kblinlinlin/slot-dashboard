@@ -442,6 +442,23 @@ select[multiple] option {
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
 }
 
+.table-scroll-top {
+  width: 100%;
+  height: 18px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 6px;
+  scrollbar-color: #8ba7a0 #eef5f3;
+}
+
+.table-scroll-top[hidden] {
+  display: none;
+}
+
+.table-scroll-spacer {
+  height: 1px;
+}
+
 .data-table {
   width: 100%;
   min-width: 980px;
