@@ -293,7 +293,10 @@ function periodFromFilename(fileName) {
 }
 
 function gameKey(value) {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u201b]/g, "'");
 }
 
 function isExcludedGame(row) {
