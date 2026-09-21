@@ -918,6 +918,85 @@ svg {
   text-align: center;
 }
 
+.internal-test-head {
+  align-items: flex-end;
+}
+
+.internal-test-picker {
+  display: grid;
+  gap: 6px;
+  min-width: min(320px, 100%);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.internal-test-picker select {
+  width: 100%;
+}
+
+.panel-note {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.internal-test-meta {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.internal-test-meta-card {
+  min-height: 92px;
+}
+
+.internal-test-meta-card strong {
+  margin-top: 8px;
+  font-size: 18px;
+}
+
+.internal-test-trend-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 14px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-muted);
+}
+
+.internal-test-trend-toolbar label {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.internal-test-compare-picker {
+  min-width: min(420px, 100%) !important;
+}
+
+.internal-test-compare-picker select {
+  min-height: 76px;
+}
+
+.internal-test-trend-layout {
+  margin-bottom: 14px;
+}
+
+#internalTestTrendChart {
+  min-height: 320px;
+}
+
+.internal-test-table-shell {
+  max-height: calc(100vh - 260px);
+}
+
 ::selection {
   background: rgba(13, 116, 106, 0.18);
 }
@@ -961,6 +1040,15 @@ svg {
   .metric-grid,
   .vendor-lists {
     grid-template-columns: 1fr;
+  }
+
+  .internal-test-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .internal-test-trend-toolbar label,
+  .internal-test-compare-picker {
+    min-width: 100% !important;
   }
 }
 
@@ -1006,6 +1094,14 @@ svg {
 
   .chart-panel {
     min-height: 300px;
+  }
+
+  .internal-test-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .internal-test-table-shell {
+    max-height: none;
   }
 
   svg {

@@ -1,4 +1,5 @@
 const INITIAL_DATA = window.INITIAL_WORKBOOK_DATA;
+const INTERNAL_TEST_DATA = window.INTERNAL_TEST_DATA ?? { games: [] };
 const STORAGE_KEY = "slot-dashboard-workbook-data-v1";
 const TOKEN_STORAGE_KEY = "slot-dashboard-github-token-session";
 const ADMIN_MODE_KEY = "slot-dashboard-admin-mode-session";
@@ -72,6 +73,9 @@ let state = {
   adminAvailable: isLocalAdminHost(),
   adminMode: loadAdminMode(),
   activeTab: "gameOverview",
+  internalTestGame: "",
+  internalTestMetric: "投注次数",
+  internalTestCompareGames: [],
   overviewPeriod: "week",
   overviewStart: "",
   overviewEnd: "",
@@ -275,6 +279,7 @@ function formatNumber(value, type = "amount") {
   if (number === null) return "-";
   if (type === "people") return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(number);
   if (type === "rate") return `${(number * 100).toFixed(2)}%`;
+  if (type === "percentagePoints") return `${number.toFixed(2)}%`;
   if (Math.abs(number) >= 1000) return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(number);
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(number);
 }
@@ -1081,6 +1086,194 @@ function renderNewGameSummary() {
   }).join("");
 }
 
+function formatInternalTestValue(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "number") {
+    return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 4 }).format(value);
+  }
+  return String(value);
+}
+
+const INTERNAL_TEST_COLUMN_ORDER = [
+  "日期",
+  "游戏ID",
+  "游戏名称",
+  "免费旋转触发次数",
+  "触发频率(%)",
+  "特征平均倍数",
+];
+
+const INTERNAL_TEST_HIDDEN_COLUMNS = new Set([
+  "货币",
+  "投注比(%)",
+  "购买次数",
+  "购买占比(%)",
+  "MaxWin达成次数",
+]);
+
+const INTERNAL_TEST_METRICS = [
+  { label: "投注次数", key: "投注次数", type: "amount" },
+  { label: "人均注單數", key: "人均注單數", type: "amount" },
+  { label: "中奖率(%)", key: "中奖率(%)", type: "percentagePoints" },
+  { label: "中奖RTP(%)", key: "中奖RTP(%)", type: "percentagePoints" },
+  { label: "波动(%)", key: "波动(%)", type: "percentagePoints" },
+  { label: "最大中倍数", key: "最大中倍数", type: "amount" },
+  { label: "玩家未下注数", key: "玩家未下注数", type: "people" },
+  { label: "新玩家未下注数", key: "新玩家未下注数", type: "people" },
+  { label: "日活跃玩家数", key: "日活跃玩家数", type: "people" },
+  { label: "次日留存率(%)", key: "次日留存率(%)", type: "percentagePoints" },
+  { label: "3日留存率(%)", key: "3日留存率(%)", type: "percentagePoints" },
+  { label: "7日留存率(%)", key: "7日留存率(%)", type: "percentagePoints" },
+  { label: "免费旋转触发次数", key: "免费旋转触发次数", type: "amount" },
+  { label: "触发频率(%)", key: "触发频率(%)", type: "percentagePoints" },
+  { label: "特征平均倍数", key: "特征平均倍数", type: "amount" },
+];
+
+function internalTestDisplayColumns(columns) {
+  const available = columns
+    .map((column, index) => ({ column, index }))
+    .filter(({ column }) => !INTERNAL_TEST_HIDDEN_COLUMNS.has(column.label));
+  const ordered = INTERNAL_TEST_COLUMN_ORDER.flatMap((label) => available.filter(({ column }) => column.label === label));
+  const orderedKeys = new Set(ordered.map(({ column }) => column.key));
+  return [...ordered, ...available.filter(({ column }) => !orderedKeys.has(column.key))];
+}
+
+function internalTestColumnLabel(column) {
+  return column.label === "免费旋转触发次数" ? "免费触发次数" : column.label;
+}
+
+function renderInternalTestData() {
+  const games = Array.isArray(INTERNAL_TEST_DATA.games) ? INTERNAL_TEST_DATA.games : [];
+  const picker = $("#internalTestGame");
+  const meta = $("#internalTestMeta");
+  const table = $("#internalTestTable");
+  const sourceLabel = $("#internalTestSourceLabel");
+  if (!picker || !meta || !table) return;
+  if (!games.length) {
+    picker.innerHTML = "";
+    meta.innerHTML = `<div class="empty-state">暂无内测数据</div>`;
+    table.innerHTML = "";
+    if (sourceLabel) sourceLabel.textContent = "";
+    renderInternalTestTrend();
+    return;
+  }
+  if (!games.some((game) => game.name === state.internalTestGame)) state.internalTestGame = "";
+  populateSelect("#internalTestGame", [{ label: "请选择游戏", value: "" }, ...games.map((game) => ({ label: game.name, value: game.name }))], state.internalTestGame);
+  const game = games.find((item) => item.name === state.internalTestGame);
+  if (sourceLabel) sourceLabel.textContent = `来源：${INTERNAL_TEST_DATA.sourceFile || "内测数据.xlsx"} | ${games.length} 款游戏`;
+  if (!game) {
+    meta.innerHTML = `<div class="empty-state">请选择游戏查看内测数据</div>`;
+    table.innerHTML = "";
+    renderInternalTestTrend();
+    return;
+  }
+  const rows = game.rows.filter((row) => Array.isArray(row) && row.some((value) => value !== null && value !== undefined && value !== ""));
+  const displayColumns = internalTestDisplayColumns(game.columns);
+  const vendor = vendorFromGameId(game.gameId);
+  meta.innerHTML = [
+    ["游戏ID", game.gameId ?? "-"],
+    ["产商", vendor],
+    ["测试周期", game.startDate && game.endDate ? `${game.startDate} 至 ${game.endDate}` : "-"],
+    ["日记录", `${rows.length} 天`],
+    ["有效字段", `${displayColumns.length} 项`],
+  ].map(([label, value]) => `
+    <article class="metric-card internal-test-meta-card ${label === "产商" ? vendorClass(vendor) : ""}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </article>
+  `).join("");
+  table.innerHTML = `
+    <thead><tr>${displayColumns.map(({ column }) => `<th>${escapeHtml(internalTestColumnLabel(column))}</th>`).join("")}</tr></thead>
+    <tbody>
+      ${rows.map((row) => `
+        <tr>${displayColumns.map(({ index }) => {
+          const value = formatInternalTestValue(row[index]);
+          const numeric = typeof row[index] === "number";
+          return `<td class="${numeric ? "num" : ""}">${escapeHtml(value)}</td>`;
+        }).join("")}</tr>
+      `).join("") || `<tr><td colspan="${displayColumns.length}" class="empty-state">暂无该游戏内测数据</td></tr>`}
+    </tbody>
+  `;
+  renderInternalTestTrend();
+}
+
+function internalTestRows(game) {
+  return (game?.rows ?? [])
+    .filter((row) => Array.isArray(row) && row.some((value) => value !== null && value !== undefined && value !== ""))
+    .sort((a, b) => String(a[0] ?? "").localeCompare(String(b[0] ?? "")));
+}
+
+function internalTestMetricOptions(game) {
+  const labels = new Set((game?.columns ?? []).map((column) => column.label));
+  return INTERNAL_TEST_METRICS.filter((metric) => labels.has(metric.key));
+}
+
+function renderInternalTestTrend() {
+  const chart = $("#internalTestTrendChart");
+  const stats = $("#internalTestTrendStats");
+  const metricPicker = $("#internalTestMetric");
+  const comparePicker = $("#internalTestCompareGames");
+  if (!chart || !stats || !metricPicker || !comparePicker) return;
+
+  const games = Array.isArray(INTERNAL_TEST_DATA.games) ? INTERNAL_TEST_DATA.games : [];
+  const selectedGame = games.find((game) => game.name === state.internalTestGame);
+  if (!selectedGame) {
+    metricPicker.innerHTML = "";
+    comparePicker.innerHTML = "";
+    chart.setAttribute("viewBox", "0 0 860 320");
+    chart.innerHTML = `<text class="chart-label" x="430" y="160" text-anchor="middle">请选择游戏查看趋势</text>`;
+    stats.innerHTML = "";
+    return;
+  }
+
+  const availableMetrics = internalTestMetricOptions(selectedGame);
+  const metric = availableMetrics.find((item) => item.key === state.internalTestMetric) ?? availableMetrics[0];
+  if (!metric) {
+    metricPicker.innerHTML = "";
+    comparePicker.innerHTML = "";
+    chart.setAttribute("viewBox", "0 0 860 320");
+    chart.innerHTML = `<text class="chart-label" x="430" y="160" text-anchor="middle">暂无可用趋势指标</text>`;
+    stats.innerHTML = "";
+    return;
+  }
+  state.internalTestMetric = metric.key;
+  populateSelect("#internalTestMetric", availableMetrics.map((item) => ({ label: item.label, value: item.key })), state.internalTestMetric);
+
+  const comparisonGames = games.filter((game) => game.name !== selectedGame.name);
+  const comparisonNames = new Set(comparisonGames.map((game) => game.name));
+  state.internalTestCompareGames = state.internalTestCompareGames.filter((name) => comparisonNames.has(name));
+  populateSelect(
+    "#internalTestCompareGames",
+    [{ label: "无", value: "__none__" }, ...comparisonGames.map((game) => ({ label: `${game.name} (${vendorFromGameId(game.gameId)})`, value: game.name }))],
+    state.internalTestCompareGames.length ? state.internalTestCompareGames : ["__none__"],
+  );
+
+  const selectedGames = [selectedGame, ...comparisonGames.filter((game) => state.internalTestCompareGames.includes(game.name))];
+  const axisLabels = [...new Set(selectedGames.flatMap((game) => internalTestRows(game).map((row) => String(row[0] ?? ""))))]
+    .filter(Boolean)
+    .sort();
+  const seriesList = selectedGames.map((game) => {
+    const metricIndex = game.columns.findIndex((column) => column.label === metric.key);
+    const points = internalTestRows(game).map((row) => {
+      const period = String(row[0] ?? "");
+      const value = toNumber(row[metricIndex]);
+      return value === null || !period
+        ? null
+        : { label: period.slice(5), period, value, row, seriesName: game.name };
+    }).filter(Boolean);
+    return { name: game.name, points };
+  });
+
+  renderMultiLineChart(
+    "#internalTestTrendChart",
+    seriesList,
+    metric,
+    `${metric.label} - 内测每日趋势`,
+    { axisLabels },
+  );
+  renderTrendStats("#internalTestTrendStats", seriesList.flatMap((series) => series.points), metric, seriesList);
+}
+
 function chronologicalWeeks() {
   return [...state.data.weeks].reverse();
 }
@@ -1104,7 +1297,7 @@ function renderLineChart(svgSelector, points, metric, title) {
   renderMultiLineChart(svgSelector, [{ name: title, points }], metric, title);
 }
 
-function renderMultiLineChart(svgSelector, seriesList, metric, title) {
+function renderMultiLineChart(svgSelector, seriesList, metric, title, options = {}) {
   const svg = $(svgSelector);
   const width = 860;
   const height = 320;
@@ -1128,11 +1321,16 @@ function renderMultiLineChart(svgSelector, seriesList, metric, title) {
     return height - padding.bottom - ratio * (height - padding.top - padding.bottom);
   };
   const colors = ["#2563eb", "#0f766e", "#ad7b18", "#c43d32", "#7c3aed", "#0e7490"];
+  const axisLabels = options.axisLabels ?? populatedSeries[0].points.map((point) => point.period ?? point.label);
+  const axisDisplayLabels = options.axisLabels
+    ? axisLabels.map((label) => String(label).slice(5))
+    : populatedSeries[0].points.map((point) => point.label);
+  const axisIndex = new Map(axisLabels.map((label, index) => [label, index]));
+  const xStep = axisLabels.length > 1 ? (width - padding.left - padding.right) / (axisLabels.length - 1) : 0;
   const plottedSeries = populatedSeries.map((series, seriesIndex) => {
-    const xStep = series.points.length > 1 ? (width - padding.left - padding.right) / (series.points.length - 1) : 0;
-    const coords = series.points.map((point, index) => ({
+    const coords = series.points.map((point) => ({
       ...point,
-      x: padding.left + index * xStep,
+      x: padding.left + (axisIndex.get(point.period ?? point.label) ?? 0) * xStep,
       y: yFor(point.value),
     }));
     return {
@@ -1154,9 +1352,10 @@ function renderMultiLineChart(svgSelector, seriesList, metric, title) {
       <path class="chart-line ${metric.type === "rank" ? "rank" : ""}" d="${series.line}" style="stroke:${series.color}"></path>
       ${series.coords.map((point) => `<circle class="chart-point" cx="${point.x}" cy="${point.y}" r="4" style="fill:${series.color}"></circle>`).join("")}
     `).join("")}
-    ${labelPoints.map((point, index) => {
-      if (labelPoints.length > 14 && index % 2 !== 0) return "";
-      return `<text class="chart-label" x="${point.x}" y="${height - 28}" text-anchor="middle">${escapeHtml(point.label)}</text>`;
+    ${axisLabels.map((label, index) => {
+      if (axisLabels.length > 14 && index % 2 !== 0) return "";
+      const x = padding.left + index * xStep;
+      return `<text class="chart-label" x="${x}" y="${height - 28}" text-anchor="middle">${escapeHtml(axisDisplayLabels[index])}</text>`;
     }).join("")}
     ${plottedSeries.map((series, index) => {
       const x = padding.left + index * 128;
@@ -1489,6 +1688,7 @@ function renderAll() {
   renderNewGameSummary();
   renderGameTrend();
   renderVendorTrend();
+  renderInternalTestData();
 }
 
 function populateControls() {
@@ -1571,6 +1771,9 @@ function wireEvents() {
     ["#overviewVendor", "overviewVendor", renderGameOverview],
     ["#overviewTopN", "overviewTopN", renderGameOverview],
     ["#vendorTopN", "vendorTopN", renderVendorOverview],
+    ["#internalTestGame", "internalTestGame", renderInternalTestData],
+    ["#internalTestMetric", "internalTestMetric", renderInternalTestTrend],
+    ["#internalTestCompareGames", "internalTestCompareGames", renderInternalTestTrend],
     ["#trendGame", "trendGames", renderGameTrend],
     ["#trendGamePeriod", "trendGamePeriod", () => { populateControls(); renderGameTrend(); }],
     ["#trendGameStart", "trendGameStart", renderGameTrend],
@@ -1585,9 +1788,14 @@ function wireEvents() {
   ];
   for (const [selector, key, render] of bindings) {
     bindEvent(selector, "change", (event) => {
-      state[key] = event.target.multiple
-        ? [...event.target.selectedOptions].map((option) => option.value)
-        : event.target.value;
+      if (key === "internalTestCompareGames") {
+        const selected = [...event.target.selectedOptions].map((option) => option.value);
+        state[key] = selected.includes("__none__") ? [] : selected;
+      } else {
+        state[key] = event.target.multiple
+          ? [...event.target.selectedOptions].map((option) => option.value)
+          : event.target.value;
+      }
       render();
     });
   }

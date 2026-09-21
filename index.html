@@ -59,6 +59,7 @@
         <button type="button" class="tab is-active" data-tab="gameOverview">游戏总览数据</button>
         <button type="button" class="tab" data-tab="vendorOverview">产商总览数据</button>
         <button type="button" class="tab" data-tab="newGameSummary">新游汇总</button>
+        <button type="button" class="tab" data-tab="internalTestData">内测数据</button>
         <button type="button" class="tab" data-tab="gameTrend">游戏走势</button>
         <button type="button" class="tab" data-tab="vendorTrend">产商走势分析</button>
       </nav>
@@ -104,6 +105,40 @@
         </div>
         <div class="metric-grid" id="newGameMetricGrid"></div>
         <div class="new-game-sections" id="newGameVendorSections"></div>
+      </section>
+
+      <section class="tab-panel" id="internalTestData">
+        <div class="section-head internal-test-head">
+          <div>
+            <p class="eyebrow">Internal Test</p>
+            <h2>游戏内测数据</h2>
+            <p class="panel-note" id="internalTestSourceLabel"></p>
+          </div>
+          <label class="internal-test-picker">
+            游戏
+            <select id="internalTestGame"></select>
+          </label>
+        </div>
+        <div class="metric-grid internal-test-meta" id="internalTestMeta"></div>
+        <div class="internal-test-trend-toolbar">
+          <label>
+            趋势指标
+            <select id="internalTestMetric"></select>
+          </label>
+          <label class="internal-test-compare-picker">
+            对比游戏
+            <select id="internalTestCompareGames" multiple></select>
+          </label>
+        </div>
+        <div class="chart-layout internal-test-trend-layout">
+          <div class="chart-panel">
+            <svg id="internalTestTrendChart" role="img" aria-label="内测游戏指标趋势图"></svg>
+          </div>
+          <div class="side-stats" id="internalTestTrendStats"></div>
+        </div>
+        <div class="table-shell internal-test-table-shell">
+          <table class="data-table" id="internalTestTable"></table>
+        </div>
       </section>
 
       <section class="tab-panel" id="gameTrend">
@@ -159,6 +194,7 @@
       window.__xlsxReady = Promise.resolve();
     </script>
     <script src="data/initial-data.js"></script>
-    <script src="app.js?v=20260730-game-overview-rtp"></script>
+    <script src="data/internal-test-data.js"></script>
+    <script src="app.js?v=20260921-1"></script>
   </body>
 </html>
