@@ -1147,12 +1147,21 @@ function renderInternalTestData() {
   const picker = $("#internalTestGame");
   const meta = $("#internalTestMeta");
   const table = $("#internalTestTable");
+  const trendToolbar = $(".internal-test-trend-toolbar");
+  const trendLayout = $(".internal-test-trend-layout");
+  const tableShell = $(".internal-test-table-shell");
   const sourceLabel = $("#internalTestSourceLabel");
   if (!picker || !meta || !table) return;
+  const setDetailVisibility = (visible) => {
+    [trendToolbar, trendLayout, tableShell].forEach((element) => {
+      if (element) element.hidden = !visible;
+    });
+  };
   if (!games.length) {
     picker.innerHTML = "";
-    meta.innerHTML = `<div class="empty-state">暂无内测数据</div>`;
+    meta.innerHTML = `<div class="empty-state internal-test-empty-state">暂无内测数据</div>`;
     table.innerHTML = "";
+    setDetailVisibility(false);
     if (sourceLabel) sourceLabel.textContent = "";
     renderInternalTestTrend();
     return;
@@ -1162,11 +1171,13 @@ function renderInternalTestData() {
   const game = games.find((item) => item.name === state.internalTestGame);
   if (sourceLabel) sourceLabel.textContent = `来源：${INTERNAL_TEST_DATA.sourceFile || "内测数据.xlsx"} | ${games.length} 款游戏`;
   if (!game) {
-    meta.innerHTML = `<div class="empty-state">请选择游戏查看内测数据</div>`;
+    meta.innerHTML = `<div class="empty-state internal-test-empty-state">请选择一个游戏查看</div>`;
     table.innerHTML = "";
+    setDetailVisibility(false);
     renderInternalTestTrend();
     return;
   }
+  setDetailVisibility(true);
   const rows = game.rows.filter((row) => Array.isArray(row) && row.some((value) => value !== null && value !== undefined && value !== ""));
   const displayColumns = internalTestDisplayColumns(game.columns);
   const vendor = vendorFromGameId(game.gameId);

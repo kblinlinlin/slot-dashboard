@@ -956,6 +956,13 @@ svg {
   font-size: 18px;
 }
 
+.internal-test-empty-state {
+  grid-column: 1 / -1;
+  min-height: 140px;
+  display: grid;
+  place-items: center;
+}
+
 .internal-test-trend-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -995,6 +1002,16 @@ svg {
 
 .internal-test-table-shell {
   max-height: calc(100vh - 260px);
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.internal-test-trend-toolbar[hidden],
+.internal-test-trend-layout[hidden],
+.internal-test-table-shell[hidden] {
+  display: none !important;
 }
 
 ::selection {
