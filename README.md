@@ -16,6 +16,7 @@
 - 共享数据：网页仍可通过 GitHub Token 发布当前看板数据到 `data/shared-dashboard.json`。
 - 共享看板数据：网页会优先读取仓库中的 `data/shared-dashboard.json`，发布后所有访问者都会看到同一份最新数据。
 - GitHub Token 现在放在页面右上角上传区域，是全站共享发布凭证，映射发布和数据发布共用这一处输入。
+- 内测问题洞察：通过 `start-dashboard.sh` 启动的看板服务保存到共享文件，局域网访问者可以共同编辑和查看问题洞察报告。
 
 ## 使用方式
 
@@ -26,6 +27,15 @@ http://localhost:8765/
 ```
 
 如果服务没有运行，可在项目目录执行：
+
+
+问题洞察报告需要使用项目中的启动脚本运行共享服务：
+
+```bash
+./start-dashboard.sh --restart
+```
+
+该服务会提供 `/api/internal-insights` 接口，并把报告保存到 `data/internal-test-insights.json`。直接使用 `python -m http.server` 只能浏览页面，不能保存共享报告。
 
 ```powershell
 python -m http.server 8765

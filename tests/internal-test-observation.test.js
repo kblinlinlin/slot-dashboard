@@ -23,7 +23,7 @@ vm.createContext(sandbox);
 vm.runInContext(appSource, sandbox);
 
 const result = sandbox.__test.internalTestProblemObservations(dataContext.window.INTERNAL_TEST_DATA.games);
-assert.equal(result.igcGames, 11);
+assert.equal(result.igcGames, 12);
 assert.equal(result.eligibleGames, 11);
 assert.deepEqual(Array.from(result.observations, (item) => item.name), ["Amazon Gold", "Canyon Beasts", "Frankenstein"]);
 assert.equal(result.observations.every((item) => item.vendor === "IGC" && item.signals.length >= 2), true);

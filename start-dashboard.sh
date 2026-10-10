@@ -78,7 +78,7 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
 fi
 
-nohup "$PYTHON_BIN" -m http.server "$PORT" --bind "$HOST" >"$LOG_FILE" 2>&1 &
+nohup "$PYTHON_BIN" "$APP_DIR/server.py" --port "$PORT" --bind "$HOST" --directory "$APP_DIR" >"$LOG_FILE" 2>&1 &
 SERVER_PID="$!"
 disown "$SERVER_PID" 2>/dev/null || true
 echo "$SERVER_PID" > "$PID_FILE"
@@ -91,7 +91,7 @@ if ! kill -0 "$SERVER_PID" 2>/dev/null; then
   exit 1
 fi
 
-echo "Dashboard server started."
+echo "Dashboard server started with shared insight storage."
 echo "PID: $SERVER_PID"
 echo "Directory: $APP_DIR"
 echo "URL: http://$HOST:$PORT/"
