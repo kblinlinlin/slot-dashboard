@@ -3,6 +3,10 @@ const INTERNAL_TEST_DATA = window.INTERNAL_TEST_DATA ?? { games: [] };
 const STORAGE_KEY = "slot-dashboard-workbook-data-v1";
 const TOKEN_STORAGE_KEY = "slot-dashboard-github-token-session";
 const ADMIN_MODE_KEY = "slot-dashboard-admin-mode-session";
+const MAPPING_DRAFTS_STORAGE_KEY = "slot-dashboard-game-mapping-drafts-v1";
+const INTERNAL_TEST_STORAGE_KEY = "slot-dashboard-internal-test-data-v1";
+const INTERNAL_INSIGHT_STORAGE_KEY = "slot-dashboard-internal-test-insights-v1";
+const INTERNAL_TEST_GITHUB_PATH = "data/internal-test-data.js";
 const EXCLUDED_GAME_KEYS = new Set(["game lobby", "none", "secretary"]);
 const GITHUB_DASHBOARD_SYNC = {
   owner: "kblinlinlin",
@@ -70,10 +74,14 @@ const VENDOR_METRICS = [
 
 let state = {
   data: normalizeWorkbookData(loadStoredData() ?? INITIAL_DATA),
+  mappingDrafts: loadMappingDrafts(),
+  internalTestData: loadInternalTestData(),
+  internalTestInsights: loadInternalTestInsights(),
   adminAvailable: isLocalAdminHost(),
   adminMode: loadAdminMode(),
   activeTab: "gameOverview",
   internalTestGame: "",
+  internalInsightGame: "",
   internalTestMetric: "投注次数",
   internalTestCompareGames: [],
   overviewPeriod: "week",
@@ -129,6 +137,196 @@ function loadStoredData() {
 
 function saveStoredData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+}
+
+function loadMappingDrafts() {
+  try {
+    const raw = localStorage.getItem(MAPPING_DRAFTS_STORAGE_KEY);
+    const drafts = raw ? JSON.parse(raw) : [];
+    return Array.isArray(drafts)
+      ? drafts.filter((entry) => entry?.english && entry?.display).map((entry) => ({
+          english: String(entry.english).trim(),
+          display: String(entry.display).trim(),
+        }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMappingDrafts() {
+  localStorage.setItem(MAPPING_DRAFTS_STORAGE_KEY, JSON.stringify(state.mappingDrafts ?? []));
+}
+
+function loadInternalTestData() {
+  try {
+    const raw = localStorage.getItem(INTERNAL_TEST_STORAGE_KEY);
+    return normalizeInternalTestData(raw ? JSON.parse(raw) : INTERNAL_TEST_DATA);
+  } catch {
+    return normalizeInternalTestData(INTERNAL_TEST_DATA);
+  }
+}
+
+function saveInternalTestData() {
+  localStorage.setItem(INTERNAL_TEST_STORAGE_KEY, JSON.stringify(state.internalTestData));
+}
+
+function loadInternalTestInsights() {
+  try {
+    const raw = localStorage.getItem(INTERNAL_INSIGHT_STORAGE_KEY);
+    const insights = raw ? JSON.parse(raw) : {};
+    return insights && typeof insights === "object" && !Array.isArray(insights) ? insights : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveInternalTestInsights() {
+  localStorage.setItem(INTERNAL_INSIGHT_STORAGE_KEY, JSON.stringify(state.internalTestInsights ?? {}));
+}
+
+function internalInsightKey(game) {
+  if (game && typeof game === "object") {
+    const id = internalTestGameIdKey(game.gameId);
+    if (id) return `id:${id}`;
+    const name = String(game.name ?? "").trim().toLowerCase();
+    return name ? `name:${name}` : "";
+  }
+  const name = String(game ?? "").trim().toLowerCase();
+  return name ? `name:${name}` : "";
+}
+
+function internalInsightObservation(game) {
+  return internalTestProblemObservations().observations.find((item) => (
+    internalInsightKey(item) === internalInsightKey(game)
+  ));
+}
+
+function internalInsightMetricSnapshot(game) {
+  const observation = internalInsightObservation(game);
+  const vendor = game.vendor || vendorFromGameId(game.gameId);
+  const lines = [
+    `游戏：${game.name}｜产商：${vendor || "-"}｜游戏 ID：${game.gameId || "-"}`,
+    `测试周期：${game.startDate || "-"} 至 ${game.endDate || "-"}｜有效测试日：${game.rows?.length || 0} 天`,
+  ];
+  if (observation?.signals?.length) {
+    lines.push("触发观测指标：");
+    observation.signals.forEach((signal) => {
+      lines.push(`- ${signal.label}：${formatNumber(signal.value, signal.type)}（当前 IGC 样本 P25：${formatNumber(signal.threshold, signal.type)}）`);
+    });
+    lines.push(`自动观测结论：${observation.conclusion}`);
+  } else {
+    lines.push("当前没有自动观测结论，请补充需要复盘的数据口径。");
+  }
+  return lines.join("\n");
+}
+
+function defaultInternalInsight(game) {
+  return {
+    gameName: game.name,
+    gameId: game.gameId,
+    reporter: "",
+    mechanism: "",
+    internalData: internalInsightMetricSnapshot(game),
+    analysis: {
+      mechanics: "",
+      pacing: "",
+      reward: "",
+      presentation: "",
+      stability: "",
+    },
+    improvementPlan: "",
+    retestData: "",
+    dataComparison: "",
+    conclusion: "",
+    updatedAt: "",
+  };
+}
+
+function currentInternalInsight(game) {
+  const base = defaultInternalInsight(game);
+  const stored = state.internalTestInsights?.[internalInsightKey(game)] ?? {};
+  return {
+    ...base,
+    ...stored,
+    analysis: { ...base.analysis, ...(stored.analysis ?? {}) },
+  };
+}
+
+function setInsightFieldValue(selector, value) {
+  const field = $(selector);
+  if (field) field.value = value ?? "";
+}
+
+function openInternalInsightEditor(gameName) {
+  const game = currentInternalTestData().games.find((item) => item.name === gameName);
+  const dialog = $("#internalInsightDialog");
+  if (!game || !dialog) return;
+  state.internalInsightGame = game.name;
+  const insight = currentInternalInsight(game);
+  const label = $("#internalInsightGameLabel");
+  if (label) label.textContent = `${game.name} · ${game.vendor || vendorFromGameId(game.gameId)} · ID ${game.gameId || "-"}`;
+  setInsightFieldValue("#insightReporter", insight.reporter);
+  setInsightFieldValue("#insightMechanism", insight.mechanism);
+  setInsightFieldValue("#insightInternalData", insight.internalData);
+  setInsightFieldValue("#insightMechanicsAnalysis", insight.analysis.mechanics);
+  setInsightFieldValue("#insightPacingAnalysis", insight.analysis.pacing);
+  setInsightFieldValue("#insightRewardAnalysis", insight.analysis.reward);
+  setInsightFieldValue("#insightPresentationAnalysis", insight.analysis.presentation);
+  setInsightFieldValue("#insightStabilityAnalysis", insight.analysis.stability);
+  setInsightFieldValue("#insightImprovementPlan", insight.improvementPlan);
+  setInsightFieldValue("#insightRetestData", insight.retestData);
+  setInsightFieldValue("#insightDataComparison", insight.dataComparison);
+  setInsightFieldValue("#insightConclusion", insight.conclusion);
+  const sections = $(".internal-insight-sections");
+  if (sections) sections.scrollTop = 0;
+  const status = $("#internalInsightSaveStatus");
+  if (status) status.textContent = insight.updatedAt ? `上次保存：${insight.updatedAt.replace("T", " ").slice(0, 16)}` : "未保存过报告";
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function closeInternalInsightEditor() {
+  const dialog = $("#internalInsightDialog");
+  if (!dialog) return;
+  if (typeof dialog.close === "function" && dialog.open) dialog.close();
+  else dialog.removeAttribute("open");
+  state.internalInsightGame = "";
+}
+
+function saveInternalInsightReport(event) {
+  event?.preventDefault();
+  const game = currentInternalTestData().games.find((item) => item.name === state.internalInsightGame);
+  if (!game) return;
+  const key = internalInsightKey(game);
+  if (!key) return;
+  state.internalTestInsights[key] = {
+    gameName: game.name,
+    gameId: game.gameId,
+    reporter: $("#insightReporter")?.value.trim() || "",
+    mechanism: $("#insightMechanism")?.value.trim() || "",
+    internalData: $("#insightInternalData")?.value.trim() || "",
+    analysis: {
+      mechanics: $("#insightMechanicsAnalysis")?.value.trim() || "",
+      pacing: $("#insightPacingAnalysis")?.value.trim() || "",
+      reward: $("#insightRewardAnalysis")?.value.trim() || "",
+      presentation: $("#insightPresentationAnalysis")?.value.trim() || "",
+      stability: $("#insightStabilityAnalysis")?.value.trim() || "",
+    },
+    improvementPlan: $("#insightImprovementPlan")?.value.trim() || "",
+    retestData: $("#insightRetestData")?.value.trim() || "",
+    dataComparison: $("#insightDataComparison")?.value.trim() || "",
+    conclusion: $("#insightConclusion")?.value.trim() || "",
+    updatedAt: new Date().toISOString(),
+  };
+  saveInternalTestInsights();
+  renderInternalTestObservation();
+  const status = $("#internalInsightSaveStatus");
+  if (status) status.textContent = "已保存到本机浏览器。";
+}
+
+function currentInternalTestData() {
+  return state.internalTestData ?? { sourceFile: "内测数据.xlsx", games: [] };
 }
 
 function loadSessionToken() {
@@ -710,6 +908,154 @@ function parseMappingCsv(text) {
   return mapping;
 }
 
+function mappingEntriesFromCsv(text) {
+  const rows = parseCsvRows(text);
+  const entries = [];
+  const indexes = new Map();
+  for (const row of rows.slice(1)) {
+    const english = String(row[0] ?? "").trim();
+    const display = String(row[1] ?? "").trim();
+    const key = gameKey(english);
+    if (!key || !display) continue;
+    if (indexes.has(key)) {
+      entries[indexes.get(key)].display = display;
+      continue;
+    }
+    indexes.set(key, entries.length);
+    entries.push({ english, display });
+  }
+  return entries;
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function mappingEntriesToCsv(entries) {
+  return [
+    "english_name,display_name",
+    ...entries.map(({ english, display }) => `${csvEscape(english)},${csvEscape(display)}`),
+  ].join("\n") + "\n";
+}
+
+function mappingEntriesFromDrafts() {
+  return (state.mappingDrafts ?? []).map(({ english, display }) => ({ english, display }));
+}
+
+function setMappingSyncStatus(message = "", isError = false) {
+  const status = $("#mappingSyncStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("is-error", isError);
+}
+
+function addGameNameMapping() {
+  if (!requireAdminMode("新增游戏名称映射")) return;
+  if (state.mappingSyncing) return;
+  const englishInput = $("#mappingEnglishName");
+  const displayInput = $("#mappingDisplayName");
+  const english = englishInput?.value.trim() || "";
+  const display = displayInput?.value.trim() || "";
+  if (!english || !display) {
+    setMappingSyncStatus("请填写英文名和中文显示名。", true);
+    return;
+  }
+  const key = gameKey(english);
+  const currentMapping = { ...(state.data?.mapping ?? {}) };
+  const existed = Object.prototype.hasOwnProperty.call(currentMapping, key);
+  currentMapping[key] = display;
+  const drafts = [...(state.mappingDrafts ?? [])];
+  const draftIndex = drafts.findIndex((entry) => gameKey(entry.english) === key);
+  if (draftIndex >= 0) drafts[draftIndex] = { english, display };
+  else drafts.push({ english, display });
+  state.mappingDrafts = drafts;
+  state.data = normalizeWorkbookData({ ...state.data, mapping: currentMapping });
+  saveStoredData();
+  saveMappingDrafts();
+  renderAll();
+  setInputValue("#mappingEnglishName", "");
+  setInputValue("#mappingDisplayName", "");
+  setMappingSyncStatus(existed ? "映射已更新到本地，请同步到 GitHub。" : "映射已新增到本地，请同步到 GitHub。");
+}
+
+async function publishGameNameMapping() {
+  if (!requireAdminMode("同步名称映射")) return;
+  if (state.mappingSyncing) return;
+  const pendingEntries = mappingEntriesFromDrafts();
+  if (!pendingEntries.length) {
+    setMappingSyncStatus("当前没有待同步的映射。", true);
+    return;
+  }
+  const token = currentGithubToken();
+  if (!token) {
+    setMappingSyncStatus("请先填写 GitHub Token。", true);
+    return;
+  }
+  saveSessionToken(token);
+  state.mappingSyncing = true;
+  renderAdminMode();
+  const button = $("#publishMappingButton");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "正在同步...";
+  }
+  setMappingSyncStatus("正在读取 GitHub 上的映射文件...");
+  const contentUrl = `https://api.github.com/repos/${GITHUB_DASHBOARD_SYNC.owner}/${GITHUB_DASHBOARD_SYNC.repo}/contents/${MAPPING_CSV_PATH}`;
+  try {
+    let publishedCsv = "";
+    const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha, currentFile) => {
+      const remoteEntries = mappingEntriesFromCsv(decodeBase64Utf8(currentFile?.content));
+      const mergedEntries = [...remoteEntries];
+      const indexes = new Map(mergedEntries.map((entry, index) => [gameKey(entry.english), index]));
+      for (const entry of pendingEntries) {
+        const key = gameKey(entry.english);
+        if (indexes.has(key)) mergedEntries[indexes.get(key)].display = entry.display;
+        else {
+          indexes.set(key, mergedEntries.length);
+          mergedEntries.push(entry);
+        }
+      }
+      publishedCsv = mappingEntriesToCsv(mergedEntries);
+      return {
+        message: `Add game name mapping${mergedEntries.length ? ` (${mergedEntries.length} entries)` : ""}`,
+        content: encodeBase64Utf8(publishedCsv),
+        sha,
+        branch: GITHUB_DASHBOARD_SYNC.branch,
+      };
+    });
+    if (!updateResult.ok) {
+      setMappingSyncStatus(`同步失败：${updateResult.status}`, true);
+      alert(`同步游戏名称映射失败：${updateResult.status}\n${updateResult.text}`);
+      return;
+    }
+    state.mappingDrafts = state.mappingDrafts.filter((entry) => !pendingEntries.some(
+      (pending) => gameKey(pending.english) === gameKey(entry.english) && pending.display === entry.display
+    ));
+    saveMappingDrafts();
+    state.data = normalizeWorkbookData({
+      ...state.data,
+      mapping: {
+        ...parseMappingCsv(publishedCsv),
+        ...Object.fromEntries(mappingEntriesFromDrafts().map(({ english, display }) => [gameKey(english), display])),
+      },
+    });
+    saveStoredData();
+    renderAll();
+    setMappingSyncStatus("已同步到 GitHub。", false);
+    alert("游戏名称映射已同步到 GitHub。页面刷新后会从 CSV 重新加载。");
+  } catch (error) {
+    setMappingSyncStatus(`同步失败：${error.message}`, true);
+    alert(`同步游戏名称映射失败：${error.message}`);
+  } finally {
+    state.mappingSyncing = false;
+    renderAdminMode();
+    if (button) {
+      button.textContent = "同步映射到 GitHub";
+    }
+  }
+}
+
 function parseCsvRows(text) {
   const rows = [];
   let row = [];
@@ -755,7 +1101,10 @@ async function loadMappingCsv() {
       const csvMapping = parseMappingCsv(await response.text());
       state.data = normalizeWorkbookData({
         ...state.data,
-        mapping: csvMapping,
+        mapping: {
+          ...csvMapping,
+          ...Object.fromEntries(mappingEntriesFromDrafts().map(({ english, display }) => [gameKey(english), display])),
+        },
       });
       saveStoredData();
       renderAll();
@@ -1142,8 +1491,301 @@ function internalTestColumnLabel(column) {
   return column.label === "免费旋转触发次数" ? "免费触发次数" : column.label;
 }
 
+function internalTestValueIsPresent(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function normalizeInternalTestDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value === "number" && Number.isFinite(value) && window.XLSX?.SSF?.parse_date_code) {
+    const parsed = window.XLSX.SSF.parse_date_code(value);
+    if (parsed?.y && parsed?.m && parsed?.d) {
+      return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+    }
+  }
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const match = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  return match ? `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}` : text;
+}
+
+function internalTestGameIdKey(gameId) {
+  if (!internalTestValueIsPresent(gameId)) return "";
+  return String(gameId).trim().replace(/\.0+$/, "");
+}
+
+function normalizeInternalTestGame(game) {
+  const columns = (game?.columns ?? [])
+    .map((column, index) => ({
+      key: String(column?.key || `c${index}`),
+      label: String(column?.label ?? "").trim(),
+      index,
+    }))
+    .filter((column) => column.label);
+  const dateIndex = columns.find((column) => column.label === "日期")?.index ?? 0;
+  const rows = (game?.rows ?? [])
+    .filter((row) => Array.isArray(row) && row.some(internalTestValueIsPresent))
+    .map((row) => {
+      const normalized = [...row];
+      normalized[dateIndex] = normalizeInternalTestDate(normalized[dateIndex]);
+      return normalized;
+    })
+    .filter((row) => internalTestValueIsPresent(row[dateIndex]));
+  const dates = rows.map((row) => String(row[dateIndex])).filter(Boolean).sort();
+  return {
+    ...game,
+    name: String(game?.name ?? "").trim(),
+    gameId: game?.gameId,
+    currency: String(game?.currency ?? "").trim(),
+    columns: columns.map(({ key, label }) => ({ key, label })),
+    rows,
+    startDate: dates[0] || String(game?.startDate ?? ""),
+    endDate: dates.at(-1) || String(game?.endDate ?? ""),
+  };
+}
+
+function normalizeInternalTestData(data) {
+  const gamesById = new Map();
+  for (const game of data?.games ?? []) {
+    const normalized = normalizeInternalTestGame(game);
+    const key = internalTestGameIdKey(normalized.gameId) || normalized.name.toLowerCase();
+    if (key && normalized.name && normalized.rows.length) gamesById.set(key, normalized);
+  }
+  return {
+    sourceFile: data?.sourceFile || "内测数据.xlsx",
+    generatedAt: data?.generatedAt || "",
+    games: [...gamesById.values()],
+  };
+}
+
+function internalTestRowByLabel(game, row) {
+  return Object.fromEntries((game.columns ?? []).map((column, index) => [column.label, row[index]]));
+}
+
+function internalTestRowToColumns(game, values) {
+  return (game.columns ?? []).map((column) => values[column.label] ?? null);
+}
+
+function mergeInternalTestGame(previousGame, nextGame) {
+  const previous = normalizeInternalTestGame(previousGame);
+  const next = normalizeInternalTestGame(nextGame);
+  const dateLabel = "日期";
+  const rowsByDate = new Map();
+  for (const row of previous.rows) {
+    const values = internalTestRowByLabel(previous, row);
+    const date = normalizeInternalTestDate(values[dateLabel]);
+    if (date) rowsByDate.set(date, internalTestRowToColumns(next, values));
+  }
+  for (const row of next.rows) {
+    const dateIndex = next.columns.findIndex((column) => column.label === dateLabel);
+    const date = normalizeInternalTestDate(row[dateIndex]);
+    if (date) rowsByDate.set(date, row);
+  }
+  return normalizeInternalTestGame({
+    ...next,
+    rows: [...rowsByDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, row]) => row),
+  });
+}
+
+function mergeInternalTestData(remoteData, localData) {
+  const remote = normalizeInternalTestData(remoteData);
+  const local = normalizeInternalTestData(localData);
+  const gamesById = new Map(remote.games.map((game) => [internalTestGameIdKey(game.gameId), game]));
+  for (const game of local.games) {
+    const key = internalTestGameIdKey(game.gameId);
+    gamesById.set(key, gamesById.has(key) ? mergeInternalTestGame(gamesById.get(key), game) : game);
+  }
+  return normalizeInternalTestData({
+    sourceFile: local.sourceFile || remote.sourceFile,
+    generatedAt: new Date().toISOString(),
+    games: [...gamesById.values()],
+  });
+}
+
+const INTERNAL_TEST_OBSERVATION_METRICS = [
+  { key: "人均注單數", label: "人均注單數", shortLabel: "人均注單數", type: "amount" },
+  { key: "次日留存率(%)", label: "次日留存率", shortLabel: "次日留存", type: "percentagePoints" },
+  { key: "3日留存率(%)", label: "3日留存率", shortLabel: "3日留存", type: "percentagePoints" },
+];
+const INTERNAL_TEST_OBSERVATION_DAYS = 7;
+
+function internalTestPercentile(values, percentile = 0.25) {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  if (sorted.length === 1) return sorted[0];
+  const position = (sorted.length - 1) * percentile;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+function internalTestObservationSample(game) {
+  const metricIndexes = Object.fromEntries(
+    INTERNAL_TEST_OBSERVATION_METRICS.map((metric) => [
+      metric.key,
+      (game.columns ?? []).findIndex((column) => column.label === metric.key),
+    ]),
+  );
+  if (Object.values(metricIndexes).some((index) => index < 0)) return null;
+
+  const rows = internalTestRows(game)
+    .map((row) => Object.fromEntries(
+      INTERNAL_TEST_OBSERVATION_METRICS.map((metric) => [metric.key, toNumber(row[metricIndexes[metric.key]])]),
+    ))
+    .filter((values) => INTERNAL_TEST_OBSERVATION_METRICS.every((metric) => values[metric.key] !== null))
+    .slice(0, INTERNAL_TEST_OBSERVATION_DAYS);
+  if (rows.length < INTERNAL_TEST_OBSERVATION_DAYS) return null;
+
+  const averages = Object.fromEntries(INTERNAL_TEST_OBSERVATION_METRICS.map((metric) => [
+    metric.key,
+    rows.reduce((total, row) => total + row[metric.key], 0) / rows.length,
+  ]));
+  return { game, averages, sampleDays: rows.length };
+}
+
+function internalTestObservationConclusion(lowMetrics) {
+  const keys = new Set(lowMetrics.map((metric) => metric.key));
+  const labels = lowMetrics.map((metric) => metric.shortLabel).join("、");
+  if (keys.size === 3) {
+    return `${labels}位于当前 IGC 样本低位，参与深度和短期回访均偏弱，建议优先检查基础玩法循环与 Feature 吸引力。`;
+  }
+  if (keys.has("次日留存率(%)") && keys.has("3日留存率(%)")) {
+    return `${labels}位于当前 IGC 样本低位，短期回访偏弱，建议检查前期奖励反馈和继续游玩动力。`;
+  }
+  if (keys.has("人均注單數") && keys.has("次日留存率(%)")) {
+    return `${labels}位于当前 IGC 样本低位，参与深度和首日回访偏弱，建议检查基础循环与前期体验。`;
+  }
+  return `${labels}位于当前 IGC 样本低位，建议结合对应指标检查玩法参与深度和前期体验。`;
+}
+
+function internalTestProblemObservations(games = currentInternalTestData().games) {
+  const igcGames = (Array.isArray(games) ? games : []).filter((game) => vendorFromGameId(game.gameId) === "IGC");
+  const samples = igcGames.map(internalTestObservationSample).filter(Boolean);
+  const thresholds = Object.fromEntries(INTERNAL_TEST_OBSERVATION_METRICS.map((metric) => [
+    metric.key,
+    internalTestPercentile(samples.map((sample) => sample.averages[metric.key])),
+  ]));
+  const observations = samples
+    .map((sample) => {
+      const lowMetrics = INTERNAL_TEST_OBSERVATION_METRICS.filter((metric) => {
+        const threshold = thresholds[metric.key];
+        return threshold !== null && sample.averages[metric.key] < threshold;
+      });
+      if (lowMetrics.length < 2) return null;
+      return {
+        name: sample.game.name,
+        gameId: sample.game.gameId,
+        vendor: "IGC",
+        sampleDays: sample.sampleDays,
+        signals: lowMetrics.map((metric) => ({
+          key: metric.key,
+          label: metric.label,
+          shortLabel: metric.shortLabel,
+          type: metric.type,
+          value: sample.averages[metric.key],
+          threshold: thresholds[metric.key],
+        })),
+        conclusion: internalTestObservationConclusion(lowMetrics),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.signals.length - a.signals.length || a.name.localeCompare(b.name, "en"));
+  return {
+    observations,
+    thresholds,
+    igcGames: igcGames.length,
+    eligibleGames: samples.length,
+  };
+}
+
+function renderInternalTestObservation() {
+  const note = $("#internalTestObservationNote");
+  const count = $("#internalTestObservationCount");
+  const list = $("#internalTestObservationList");
+  if (!note || !count || !list) return;
+
+  const result = internalTestProblemObservations();
+  note.textContent = `仅纳入 IGC 游戏；取首 ${INTERNAL_TEST_OBSERVATION_DAYS} 个有效测试日的平均人均注單數、次日留存和 3 日留存，与当前 IGC 样本 P25 比较，至少 2 项偏低才进入观测；不足 ${INTERNAL_TEST_OBSERVATION_DAYS} 个有效测试日的游戏不参与判断。`;
+  count.textContent = `${result.observations.length} 款待观测`;
+  if (!result.observations.length) {
+    list.innerHTML = `<div class="internal-observation-empty empty-state">当前没有满足观测条件的 IGC 游戏。</div>`;
+    return;
+  }
+  list.innerHTML = result.observations.map((observation) => `
+    <article class="internal-observation-row">
+      <div class="internal-observation-game">
+        <strong>${escapeHtml(observation.name)}</strong>
+        <span>${escapeHtml(observation.vendor)} · ID ${escapeHtml(observation.gameId)}</span>
+      </div>
+      <div class="internal-observation-conclusion">
+        <p>${escapeHtml(observation.conclusion)}</p>
+        <div class="internal-observation-signals">
+          ${observation.signals.map((signal) => `
+            <span class="internal-observation-signal">
+              ${escapeHtml(signal.shortLabel)} ${escapeHtml(formatNumber(signal.value, signal.type))}（P25 ${escapeHtml(formatNumber(signal.threshold, signal.type))}）
+            </span>
+          `).join("")}
+        </div>
+      </div>
+      <div class="internal-observation-actions">
+        <button class="ghost-button internal-observation-detail" type="button" data-observation-action="detail" data-observation-game="${escapeHtml(observation.name)}">查看详情</button>
+        <button class="ghost-button internal-observation-insight" type="button" data-observation-action="insight" data-observation-game="${escapeHtml(observation.name)}">问题洞察</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function parseInternalTestWorkbook(workbook, sourceFile) {
+  const games = [];
+  for (const sheetName of workbook.SheetNames) {
+    const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: true, defval: null });
+    if (!rawRows.length) continue;
+    const headers = rawRows[0].map((value) => String(value ?? "").trim().replace(/^\ufeff/, ""));
+    const gameIdIndex = headers.findIndex((header) => header === "游戏ID");
+    const nameIndex = headers.findIndex((header) => header === "游戏名称");
+    const dateIndex = headers.findIndex((header) => header === "日期");
+    if (gameIdIndex < 0 || nameIndex < 0 || dateIndex < 0) continue;
+    const rows = rawRows.slice(1)
+      .filter((row) => internalTestValueIsPresent(row[gameIdIndex]) && internalTestValueIsPresent(row[nameIndex]))
+      .map((row) => {
+        const normalized = [...row];
+        normalized[dateIndex] = normalizeInternalTestDate(normalized[dateIndex]);
+        return normalized;
+      })
+      .filter((row) => internalTestValueIsPresent(row[dateIndex]));
+    if (!rows.length) continue;
+    const columns = headers.map((label, index) => ({ key: `c${index}`, label, index })).filter((column) => column.label);
+    games.push(normalizeInternalTestGame({
+      name: String(rows[0][nameIndex]).trim(),
+      gameId: rows[0][gameIdIndex],
+      currency: rows[0][headers.findIndex((header) => header === "货币")],
+      columns,
+      rows,
+    }));
+  }
+  if (!games.length) throw new Error("未识别到内测数据工作表，请确认每个工作表包含日期、游戏ID和游戏名称字段。");
+  return normalizeInternalTestData({ sourceFile, generatedAt: new Date().toISOString(), games });
+}
+
+function parseInternalTestScript(text) {
+  const match = String(text ?? "").match(/window\.INTERNAL_TEST_DATA\s*=\s*([\s\S]*?);?\s*$/);
+  if (!match) return null;
+  try {
+    return normalizeInternalTestData(JSON.parse(match[1].trim().replace(/;$/, "")));
+  } catch {
+    return null;
+  }
+}
+
+function internalTestDataScript(data) {
+  return `window.INTERNAL_TEST_DATA = ${JSON.stringify(normalizeInternalTestData(data))};\n`;
+}
+
 function renderInternalTestData() {
-  const games = Array.isArray(INTERNAL_TEST_DATA.games) ? INTERNAL_TEST_DATA.games : [];
+  const internalTestData = currentInternalTestData();
+  const games = Array.isArray(internalTestData.games) ? internalTestData.games : [];
   const picker = $("#internalTestGame");
   const meta = $("#internalTestMeta");
   const table = $("#internalTestTable");
@@ -1169,7 +1811,7 @@ function renderInternalTestData() {
   if (!games.some((game) => game.name === state.internalTestGame)) state.internalTestGame = "";
   populateSelect("#internalTestGame", [{ label: "请选择游戏", value: "" }, ...games.map((game) => ({ label: game.name, value: game.name }))], state.internalTestGame);
   const game = games.find((item) => item.name === state.internalTestGame);
-  if (sourceLabel) sourceLabel.textContent = `来源：${INTERNAL_TEST_DATA.sourceFile || "内测数据.xlsx"} | ${games.length} 款游戏`;
+  if (sourceLabel) sourceLabel.textContent = `来源：${internalTestData.sourceFile || "内测数据.xlsx"} | ${games.length} 款游戏`;
   if (!game) {
     meta.innerHTML = `<div class="empty-state internal-test-empty-state">请选择一个游戏查看</div>`;
     table.innerHTML = "";
@@ -1226,7 +1868,7 @@ function renderInternalTestTrend() {
   const comparePicker = $("#internalTestCompareGames");
   if (!chart || !stats || !metricPicker || !comparePicker) return;
 
-  const games = Array.isArray(INTERNAL_TEST_DATA.games) ? INTERNAL_TEST_DATA.games : [];
+  const games = Array.isArray(currentInternalTestData().games) ? currentInternalTestData().games : [];
   const selectedGame = games.find((game) => game.name === state.internalTestGame);
   if (!selectedGame) {
     metricPicker.innerHTML = "";
@@ -1603,6 +2245,55 @@ async function publishSharedDashboard(customMessage = "") {
   alert("已发布当前看板数据到 GitHub。等 GitHub Pages 更新后，其他访问者刷新页面即可看到最新数据。");
 }
 
+function setInternalTestUploadStatus(message = "", isError = false) {
+  const status = $("#internalTestUploadStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("is-error", isError);
+}
+
+async function publishInternalTestData(customMessage = "") {
+  if (!requireAdminMode("发布内测数据")) return false;
+  const token = currentGithubToken();
+  if (!token) {
+    setInternalTestUploadStatus("已更新本地数据，填写 GitHub Token 后可同步。", false);
+    return false;
+  }
+  saveSessionToken(token);
+  state.internalTestSyncing = true;
+  renderAdminMode();
+  setInternalTestUploadStatus("正在同步内测数据到 GitHub...");
+  const contentUrl = `https://api.github.com/repos/${GITHUB_DASHBOARD_SYNC.owner}/${GITHUB_DASHBOARD_SYNC.repo}/contents/${INTERNAL_TEST_GITHUB_PATH}`;
+  try {
+    let publishedData = currentInternalTestData();
+    const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha, currentFile) => {
+      const remoteData = parseInternalTestScript(decodeBase64Utf8(currentFile?.content));
+      publishedData = mergeInternalTestData(remoteData, currentInternalTestData());
+      return {
+        message: customMessage || `Sync internal test data ${publishedData.sourceFile || ""}`,
+        content: encodeBase64Utf8(internalTestDataScript(publishedData)),
+        sha,
+        branch: GITHUB_DASHBOARD_SYNC.branch,
+      };
+    });
+    if (!updateResult.ok) {
+      setInternalTestUploadStatus(`同步失败：${updateResult.status}`, true);
+      return false;
+    }
+    state.internalTestData = publishedData;
+    saveInternalTestData();
+    renderAll();
+    setInternalTestUploadStatus("内测数据已同步到 GitHub。", false);
+    return true;
+  } catch (error) {
+    setInternalTestUploadStatus(`同步失败：${error.message}`, true);
+    return false;
+  } finally {
+    state.internalTestSyncing = false;
+    renderAdminMode();
+  }
+}
+
 async function loadSharedMapping() {
   await loadMappingCsv();
 }
@@ -1659,6 +2350,12 @@ function renderAdminMode() {
     $("#globalGithubToken"),
     $("#fileInput"),
     $("#publishDashboardButton"),
+    $("#internalTestFileInput"),
+    $("#publishInternalTestButton"),
+    $("#mappingEnglishName"),
+    $("#mappingDisplayName"),
+    $("#addMappingButton"),
+    $("#publishMappingButton"),
   ].filter(Boolean);
 
   if (adminShell) adminShell.classList.toggle("is-hidden", !state.adminAvailable);
@@ -1668,6 +2365,17 @@ function renderAdminMode() {
   controls.forEach((element) => {
     element.disabled = !state.adminAvailable || !state.adminMode;
   });
+  ["#mappingEnglishName", "#mappingDisplayName", "#addMappingButton", "#publishMappingButton"].forEach((selector) => {
+    const element = $(selector);
+    if (element) element.disabled = !state.adminAvailable || !state.adminMode || Boolean(state.mappingSyncing);
+  });
+  if (!$("#mappingSyncStatus")?.textContent && state.mappingDrafts.length) {
+    setMappingSyncStatus(`有 ${state.mappingDrafts.length} 条映射待同步。`);
+  }
+  const internalTestInput = $("#internalTestFileInput");
+  if (internalTestInput) internalTestInput.disabled = !state.adminAvailable || !state.adminMode || Boolean(state.internalTestSyncing);
+  const internalTestPublishButton = $("#publishInternalTestButton");
+  if (internalTestPublishButton) internalTestPublishButton.disabled = !state.adminAvailable || !state.adminMode || Boolean(state.internalTestSyncing);
 }
 
 async function reloadSharedDataFromRemote() {
@@ -1700,6 +2408,7 @@ function renderAll() {
   renderGameTrend();
   renderVendorTrend();
   renderInternalTestData();
+  renderInternalTestObservation();
 }
 
 function populateControls() {
@@ -1765,13 +2474,40 @@ function populateControls() {
   setInputValue("#gameSearch", state.gameSearch);
 }
 
+function activateTab(tabName) {
+  state.activeTab = tabName;
+  document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("is-active", item.dataset.tab === tabName));
+  document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("is-active", panel.id === tabName));
+}
+
 function wireEvents() {
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
-      state.activeTab = button.dataset.tab;
-      document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("is-active", item === button));
-      document.querySelectorAll(".tab-panel").forEach((panel) => panel.classList.toggle("is-active", panel.id === state.activeTab));
+      activateTab(button.dataset.tab);
     });
+  });
+
+  bindEvent("#internalTestObservationList", "click", (event) => {
+    const button = event.target.closest("[data-observation-action]");
+    if (!button) return;
+    const gameName = button.dataset.observationGame;
+    const game = currentInternalTestData().games.find((item) => item.name === gameName);
+    if (!game) return;
+    if (button.dataset.observationAction === "insight") {
+      openInternalInsightEditor(game.name);
+      return;
+    }
+    state.internalTestGame = game.name;
+    activateTab("internalTestData");
+    renderInternalTestData();
+    document.querySelector("#internalTestData")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  bindEvent("#internalInsightForm", "submit", saveInternalInsightReport);
+  bindEvent("#closeInternalInsightButton", "click", closeInternalInsightEditor);
+  bindEvent("#cancelInternalInsightButton", "click", closeInternalInsightEditor);
+  bindEvent("#internalInsightDialog", "click", (event) => {
+    if (event.target === event.currentTarget) closeInternalInsightEditor();
   });
 
   const bindings = [
@@ -1840,6 +2576,13 @@ function wireEvents() {
       alert(`发布共享数据失败：${error.message}`);
     });
   });
+  bindEvent("#addMappingButton", "click", addGameNameMapping);
+  bindEvent("#publishMappingButton", "click", () => {
+    publishGameNameMapping().catch((error) => {
+      setMappingSyncStatus(`同步失败：${error.message}`, true);
+      alert(`同步游戏名称映射失败：${error.message}`);
+    });
+  });
   bindEvent("#reloadSharedButton", "click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -1863,6 +2606,11 @@ function wireEvents() {
     setTimeout(() => ($("#copySummaryButton").textContent = "复制总结"), 1200);
   });
   bindEvent("#fileInput", "change", handleFileUpload);
+  bindEvent("#internalTestFileInput", "change", handleInternalTestFileUpload);
+  bindEvent("#publishInternalTestButton", "click", () => {
+    publishInternalTestData("Sync internal test data manually")
+      .catch((error) => setInternalTestUploadStatus(`同步失败：${error.message}`, true));
+  });
 }
 
 async function handleFileUpload(event) {
@@ -1905,6 +2653,45 @@ async function handleFileUpload(event) {
     }
   } catch (error) {
     alert(`表格解析失败：${error.message}`);
+  }
+}
+
+async function handleInternalTestFileUpload(event) {
+  if (!requireAdminMode("上传内测数据")) {
+    event.target.value = "";
+    return;
+  }
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (!window.XLSX) {
+    setInternalTestUploadStatus("Excel 解析库尚未加载，请刷新页面后重试。", true);
+    return;
+  }
+  state.internalTestSyncing = true;
+  renderAdminMode();
+  setInternalTestUploadStatus("正在读取内测数据...");
+  try {
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: false });
+    const uploadedData = parseInternalTestWorkbook(workbook, file.name);
+    state.internalTestData = mergeInternalTestData(state.internalTestData, uploadedData);
+    saveInternalTestData();
+    state.internalTestGame = "";
+    state.internalTestMetric = "投注次数";
+    state.internalTestCompareGames = [];
+    renderAll();
+    setInternalTestUploadStatus(`已更新 ${uploadedData.games.length} 款游戏，本地共 ${state.internalTestData.games.length} 款。`);
+    const token = currentGithubToken();
+    if (token) {
+      await publishInternalTestData(`Sync internal test data after upload: ${file.name}`);
+    } else {
+      setInternalTestUploadStatus(`已更新 ${uploadedData.games.length} 款游戏，仅保存在本地。`);
+    }
+  } catch (error) {
+    setInternalTestUploadStatus(`表格解析失败：${error.message}`, true);
+  } finally {
+    state.internalTestSyncing = false;
+    renderAdminMode();
+    event.target.value = "";
   }
 }
 

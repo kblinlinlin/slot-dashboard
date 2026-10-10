@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>平台 Slot 游戏数据看板</title>
-    <link rel="stylesheet" href="styles.css?v=20261008-1" />
+    <link rel="stylesheet" href="styles.css?v=20261010-3" />
   </head>
   <body>
     <main class="app-shell">
@@ -34,6 +34,38 @@
                 GitHub Token
                 <input id="globalGithubToken" type="password" placeholder="用于发布共享数据和共享映射" />
               </label>
+              <section class="admin-mapping-tools" aria-label="管理员游戏名称映射">
+                <div class="admin-tool-head">
+                  <div>
+                    <p class="eyebrow">Name Mapping</p>
+                    <strong>新增游戏名称映射</strong>
+                  </div>
+                  <span id="mappingSyncStatus" class="admin-tool-status" role="status"></span>
+                </div>
+                <div class="mapping-form admin-mapping-form">
+                  <label>
+                    英文游戏名
+                    <input id="mappingEnglishName" type="text" autocomplete="off" placeholder="例如：New Game" />
+                  </label>
+                  <label>
+                    中文显示名
+                    <input id="mappingDisplayName" type="text" autocomplete="off" placeholder="例如：新游戏" />
+                  </label>
+                  <div class="mapping-actions">
+                    <button class="ghost-button" id="addMappingButton" type="button">新增映射</button>
+                    <button class="ghost-button" id="publishMappingButton" type="button">同步映射到 GitHub</button>
+                  </div>
+                  <p class="mapping-note">新增后先更新当前本地看板；点击同步后会把映射追加到仓库中的 CSV 文件。</p>
+                </div>
+              </section>
+              <div class="admin-upload-tools">
+                <label class="admin-file-label">
+                  上传内测数据
+                  <input id="internalTestFileInput" type="file" accept=".xlsx,.xls" />
+                </label>
+                <button class="ghost-button" id="publishInternalTestButton" type="button">同步内测数据到 GitHub</button>
+                <span id="internalTestUploadStatus" class="admin-tool-status" role="status"></span>
+              </div>
               <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,text/csv" />
               <div class="upload-actions">
                 <button class="ghost-button" id="publishDashboardButton" type="button">发布当前数据到 GitHub</button>
@@ -60,6 +92,7 @@
         <button type="button" class="tab" data-tab="vendorOverview">产商总览数据</button>
         <button type="button" class="tab" data-tab="newGameSummary">新游汇总</button>
         <button type="button" class="tab" data-tab="internalTestData">内测数据</button>
+        <button type="button" class="tab" data-tab="internalTestObservation">内测问题观测</button>
         <button type="button" class="tab" data-tab="gameTrend">游戏走势</button>
         <button type="button" class="tab" data-tab="vendorTrend">产商走势分析</button>
       </nav>
@@ -141,6 +174,87 @@
         </div>
       </section>
 
+      <section class="tab-panel" id="internalTestObservation">
+        <div class="section-head internal-observation-head">
+          <div>
+            <p class="eyebrow">Internal Test Review</p>
+            <h2>内测问题观测</h2>
+            <p class="panel-note" id="internalTestObservationNote"></p>
+          </div>
+          <strong class="internal-observation-count" id="internalTestObservationCount"></strong>
+        </div>
+        <div class="internal-observation-list" id="internalTestObservationList"></div>
+      </section>
+
+      <dialog class="internal-insight-dialog" id="internalInsightDialog" aria-labelledby="internalInsightTitle">
+        <form class="internal-insight-form" id="internalInsightForm">
+          <div class="internal-insight-dialog-head">
+            <div>
+              <p class="eyebrow">Problem Insight</p>
+              <h2 id="internalInsightTitle">问题洞察报告</h2>
+              <p class="panel-note" id="internalInsightGameLabel"></p>
+            </div>
+            <label class="internal-insight-reporter">
+              报告人
+              <input id="insightReporter" type="text" autocomplete="name" placeholder="请输入报告人" />
+            </label>
+            <button class="icon-button" id="closeInternalInsightButton" type="button" aria-label="关闭问题洞察报告">×</button>
+          </div>
+
+          <div class="internal-insight-sections">
+            <section class="internal-insight-section">
+              <div class="internal-insight-section-head"><span>01</span><h3>游戏机制说明</h3></div>
+              <p class="internal-insight-help">简要说明核心玩法、基础流程、Feature 触发和结算流程，帮助复盘者先建立共同语境。</p>
+              <textarea id="insightMechanism" rows="3" placeholder="简要说明基础玩法、核心流程、Feature 触发条件和结算方式。"></textarea>
+            </section>
+
+            <section class="internal-insight-section">
+              <div class="internal-insight-section-head"><span>02</span><h3>问题内测数据</h3></div>
+              <p class="internal-insight-help">系统会带入触发观测的指标和 P25 基准，可补充数据口径、异常区间和需要关注的日期。</p>
+              <textarea id="insightInternalData" rows="4" placeholder="记录当前问题数据、数据口径、异常日期或其他需要保留的证据。"></textarea>
+            </section>
+
+            <section class="internal-insight-section">
+              <div class="internal-insight-section-head"><span>03</span><h3>问题分析维度</h3></div>
+              <div class="internal-insight-dimension-grid">
+                <label>玩法与流程<textarea id="insightMechanicsAnalysis" rows="3" placeholder="从循环清晰度、操作顺畅度和 Feature 理解成本分析。"></textarea></label>
+                <label>节奏与留存<textarea id="insightPacingAnalysis" rows="3" placeholder="前期节奏、局间等待、奖励间隔是否影响继续游玩？"></textarea></label>
+                <label>奖励与反馈<textarea id="insightRewardAnalysis" rows="3" placeholder="奖励强度、反馈频率、中奖感和风险回报是否匹配？"></textarea></label>
+                <label>画面与交互<textarea id="insightPresentationAnalysis" rows="3" placeholder="主题表达、信息层级、按钮和结果反馈是否影响理解？"></textarea></label>
+                <label>稳定性与异常<textarea id="insightStabilityAnalysis" rows="3" placeholder="是否存在卡顿、报错、断线、数据异常或影响体验的技术问题？"></textarea></label>
+              </div>
+            </section>
+
+            <section class="internal-insight-section">
+              <div class="internal-insight-section-head"><span>04</span><h3>改进建议与改动记录</h3></div>
+              <textarea id="insightImprovementPlan" rows="4" placeholder="记录需要验证的改动、负责人或下一轮复测前的处理计划。"></textarea>
+            </section>
+
+            <section class="internal-insight-section">
+              <div class="internal-insight-section-head"><span>05</span><h3>复测数据</h3></div>
+              <p class="internal-insight-help">改动完成后的复测结果单独记录，便于和问题内测数据并列查看。</p>
+              <textarea id="insightRetestData" rows="4" placeholder="填写复测周期、样本口径、核心指标和仍存在的异常。"></textarea>
+            </section>
+
+            <section class="internal-insight-section">
+              <div class="internal-insight-section-head"><span>06</span><h3>数据对比</h3></div>
+              <textarea id="insightDataComparison" rows="4" placeholder="对比问题内测与复测数据，说明指标变化、改善幅度和未达标项。"></textarea>
+            </section>
+
+            <section class="internal-insight-section">
+              <div class="internal-insight-section-head"><span>07</span><h3>最终结论</h3></div>
+              <textarea id="insightConclusion" rows="4" placeholder="基于问题分析和复测对比，给出当前是否解决、是否继续优化以及后续跟进结论。"></textarea>
+            </section>
+          </div>
+
+          <div class="internal-insight-dialog-actions">
+            <span class="internal-insight-save-status" id="internalInsightSaveStatus" role="status"></span>
+            <button class="ghost-button" id="cancelInternalInsightButton" type="button">取消</button>
+            <button class="primary-button" id="saveInternalInsightButton" type="submit">保存报告</button>
+          </div>
+        </form>
+      </dialog>
+
       <section class="tab-panel" id="gameTrend">
         <div class="toolbar">
           <label class="search-field">游戏搜索<input id="trendGameSearch" type="search" placeholder="输入中文或英文名筛选" /></label>
@@ -194,7 +308,7 @@
       window.__xlsxReady = Promise.resolve();
     </script>
     <script src="data/initial-data.js"></script>
-    <script src="data/internal-test-data.js?v=20260928-1"></script>
-    <script src="app.js?v=20261008-1"></script>
+    <script src="data/internal-test-data.js?v=20261009-1"></script>
+    <script src="app.js?v=20261010-3"></script>
   </body>
 </html>
