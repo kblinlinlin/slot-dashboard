@@ -78,6 +78,19 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
 fi
 
+if [[ "$RESTART_RUNNING" == "1" ]] && command -v lsof >/dev/null 2>&1; then
+  EXISTING_PIDS="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  for EXISTING_PID in $EXISTING_PIDS; do
+    if [[ "$EXISTING_PID" != "$$" ]] && kill -0 "$EXISTING_PID" 2>/dev/null; then
+      echo "Stopping existing process on port $PORT: $EXISTING_PID"
+      kill "$EXISTING_PID" 2>/dev/null || true
+    fi
+  done
+  if [[ -n "$EXISTING_PIDS" ]]; then
+    sleep 1
+  fi
+fi
+
 nohup "$PYTHON_BIN" "$APP_DIR/server.py" --port "$PORT" --bind "$HOST" --directory "$APP_DIR" >"$LOG_FILE" 2>&1 &
 SERVER_PID="$!"
 disown "$SERVER_PID" 2>/dev/null || true

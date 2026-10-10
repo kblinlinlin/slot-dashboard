@@ -485,7 +485,9 @@ async function saveSharedInternalInsight(key, report) {
         const payload = await response.json();
         return { ok: true, reports: internalInsightsResponseData(payload) };
       }
-      apiFailure = `共享服务返回 ${response.status}`;
+      apiFailure = response.status === 501
+        ? "当前 8765 仍由旧的静态服务提供"
+        : `共享服务返回 ${response.status}`;
     } catch (error) {
       apiFailure = error.message;
     }
@@ -496,7 +498,7 @@ async function saveSharedInternalInsight(key, report) {
     return {
       ok: false,
       message: apiFailure
-        ? `共享保存失败：${apiFailure}。请使用 start-dashboard.sh 启动看板服务。`
+        ? `共享保存失败：${apiFailure}。请先拉取最新代码，再执行 ./start-dashboard.sh --restart。`
         : "当前页面没有共享写入服务，请使用 start-dashboard.sh 启动看板服务。",
     };
   }
