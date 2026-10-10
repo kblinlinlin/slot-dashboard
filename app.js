@@ -7,6 +7,8 @@ const MAPPING_DRAFTS_STORAGE_KEY = "slot-dashboard-game-mapping-drafts-v1";
 const INTERNAL_TEST_STORAGE_KEY = "slot-dashboard-internal-test-data-v1";
 const INTERNAL_INSIGHT_STORAGE_KEY = "slot-dashboard-internal-test-insights-v1";
 const INTERNAL_TEST_GITHUB_PATH = "data/internal-test-data.js";
+const INTERNAL_INSIGHTS_API_PATH = "/api/internal-insights";
+const INTERNAL_INSIGHTS_GITHUB_PATH = "data/internal-test-insights.json";
 const EXCLUDED_GAME_KEYS = new Set(["game lobby", "none", "secretary"]);
 const GITHUB_DASHBOARD_SYNC = {
   owner: "kblinlinlin",
@@ -185,6 +187,13 @@ function saveInternalTestInsights() {
   localStorage.setItem(INTERNAL_INSIGHT_STORAGE_KEY, JSON.stringify(state.internalTestInsights ?? {}));
 }
 
+function normalizeInternalInsights(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([key, report]) => (
+    key && report && typeof report === "object" && !Array.isArray(report)
+  )));
+}
+
 function internalInsightKey(game) {
   if (game && typeof game === "object") {
     const id = internalTestGameIdKey(game.gameId);
@@ -294,13 +303,13 @@ function closeInternalInsightEditor() {
   state.internalInsightGame = "";
 }
 
-function saveInternalInsightReport(event) {
+async function saveInternalInsightReport(event) {
   event?.preventDefault();
   const game = currentInternalTestData().games.find((item) => item.name === state.internalInsightGame);
   if (!game) return;
   const key = internalInsightKey(game);
   if (!key) return;
-  state.internalTestInsights[key] = {
+  const report = {
     gameName: game.name,
     gameId: game.gameId,
     reporter: $("#insightReporter")?.value.trim() || "",
@@ -319,10 +328,28 @@ function saveInternalInsightReport(event) {
     conclusion: $("#insightConclusion")?.value.trim() || "",
     updatedAt: new Date().toISOString(),
   };
-  saveInternalTestInsights();
-  renderInternalTestObservation();
   const status = $("#internalInsightSaveStatus");
-  if (status) status.textContent = "已保存到本机浏览器。";
+  const button = $("#saveInternalInsightButton");
+  if (button) button.disabled = true;
+  if (status) status.textContent = "正在保存到共享报告...";
+  try {
+    const result = await saveSharedInternalInsight(key, report);
+    if (!result.ok) {
+      if (status) status.textContent = result.message || "共享保存失败，请稍后重试。";
+      return;
+    }
+    state.internalTestInsights = normalizeInternalInsights(result.reports ?? {
+      ...state.internalTestInsights,
+      [key]: report,
+    });
+    saveInternalTestInsights();
+    renderInternalTestObservation();
+    if (status) status.textContent = "已保存到共享报告，其他访问者刷新后可看到。";
+  } catch (error) {
+    if (status) status.textContent = `共享保存失败：${error.message}`;
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function currentInternalTestData() {
@@ -432,6 +459,64 @@ function parseGitHubJsonContent(file) {
   } catch {
     return null;
   }
+}
+
+function internalInsightsApiUrl() {
+  const origin = window.location?.origin;
+  if (!origin || window.location?.protocol === "file:") return "";
+  return `${origin}${INTERNAL_INSIGHTS_API_PATH}`;
+}
+
+function internalInsightsResponseData(payload) {
+  return normalizeInternalInsights(payload?.reports ?? payload);
+}
+
+async function saveSharedInternalInsight(key, report) {
+  const apiUrl = internalInsightsApiUrl();
+  let apiFailure = "";
+  if (apiUrl) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, report }),
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        return { ok: true, reports: internalInsightsResponseData(payload) };
+      }
+      apiFailure = `共享服务返回 ${response.status}`;
+    } catch (error) {
+      apiFailure = error.message;
+    }
+  }
+
+  const token = currentGithubToken();
+  if (!token) {
+    return {
+      ok: false,
+      message: apiFailure
+        ? `共享保存失败：${apiFailure}。请使用 start-dashboard.sh 启动看板服务。`
+        : "当前页面没有共享写入服务，请使用 start-dashboard.sh 启动看板服务。",
+    };
+  }
+  saveSessionToken(token);
+  const contentUrl = `https://api.github.com/repos/${GITHUB_DASHBOARD_SYNC.owner}/${GITHUB_DASHBOARD_SYNC.repo}/contents/${INTERNAL_INSIGHTS_GITHUB_PATH}`;
+  let publishedReports = null;
+  const updateResult = await putGitHubContentWithRetry(contentUrl, token, (sha, currentFile) => {
+    const remoteReports = internalInsightsResponseData(parseGitHubJsonContent(currentFile));
+    publishedReports = { ...remoteReports, [key]: report };
+    return {
+      message: `Update internal insight report ${report.gameName || key}`,
+      content: encodeBase64Utf8(JSON.stringify(publishedReports, null, 2) + "\n"),
+      sha,
+      branch: GITHUB_DASHBOARD_SYNC.branch,
+    };
+  });
+  if (!updateResult.ok) {
+    return { ok: false, message: `共享保存失败：GitHub ${updateResult.status}` };
+  }
+  return { ok: true, reports: publishedReports ?? { [key]: report } };
 }
 
 function mergeDashboardHistory(localData, remoteData) {
@@ -1454,6 +1539,13 @@ const INTERNAL_TEST_COLUMN_ORDER = [
 
 const INTERNAL_TEST_HIDDEN_COLUMNS = new Set([
   "货币",
+  "投注金额",
+  "下注金额",
+  "人均投注额",
+  "人均投注額",
+  "每注单平均投注额",
+  "每注單平均投注額",
+  "购买投注金额",
   "投注比(%)",
   "购买次数",
   "购买占比(%)",
@@ -1481,7 +1573,7 @@ const INTERNAL_TEST_METRICS = [
 function internalTestDisplayColumns(columns) {
   const available = columns
     .map((column, index) => ({ column, index }))
-    .filter(({ column }) => !INTERNAL_TEST_HIDDEN_COLUMNS.has(column.label));
+    .filter(({ column }) => !INTERNAL_TEST_HIDDEN_COLUMNS.has(String(column.label ?? "").trim()));
   const ordered = INTERNAL_TEST_COLUMN_ORDER.flatMap((label) => available.filter(({ column }) => column.label === label));
   const orderedKeys = new Set(ordered.map(({ column }) => column.key));
   return [...ordered, ...available.filter(({ column }) => !orderedKeys.has(column.key))];
@@ -2298,6 +2390,31 @@ async function loadSharedMapping() {
   await loadMappingCsv();
 }
 
+async function loadSharedInternalTestInsights() {
+  const localReports = normalizeInternalInsights(state.internalTestInsights);
+  const urls = [];
+  const apiUrl = internalInsightsApiUrl();
+  if (apiUrl) urls.push(apiUrl);
+  urls.push(
+    `${GITHUB_RAW_BASE}/${INTERNAL_INSIGHTS_GITHUB_PATH}?ts=${Date.now()}`,
+    `${INTERNAL_INSIGHTS_GITHUB_PATH}?ts=${Date.now()}`,
+  );
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) continue;
+      const remoteReports = internalInsightsResponseData(await response.json());
+      state.internalTestInsights = { ...localReports, ...remoteReports };
+      saveInternalTestInsights();
+      renderInternalTestObservation();
+      return;
+    } catch {
+      // Try the next shared report source.
+    }
+  }
+  state.internalTestInsights = localReports;
+}
+
 async function loadSharedDashboard() {
   const urls = [
     `${GITHUB_RAW_BASE}/${GITHUB_DASHBOARD_SYNC.path}?ts=${Date.now()}`,
@@ -2328,6 +2445,7 @@ async function loadSharedDashboard() {
 async function initializeRemoteData() {
   await loadSharedDashboard();
   await loadSharedMapping();
+  await loadSharedInternalTestInsights();
 }
 
 function renderSharedStatus() {
